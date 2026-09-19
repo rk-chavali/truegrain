@@ -106,7 +106,7 @@ func TestARotationHasNoWindowWhereNeitherTokenWorks(t *testing.T) {
 
 	// Both live: clients roll over here, in whatever order they restart.
 	rewrite(t, path, bothTokens)
-	waitForReload(t, creds)
+	reloadNow(t, creds)
 	if !accepts("old-secret") {
 		t.Error("the old token stopped working the moment the new one was added, " +
 			"which is the outage rotation is supposed to avoid")
@@ -117,7 +117,7 @@ func TestARotationHasNoWindowWhereNeitherTokenWorks(t *testing.T) {
 
 	// The old one is removed once nothing holds it.
 	rewrite(t, path, newTokenOnly)
-	waitForReload(t, creds)
+	reloadNow(t, creds)
 	if accepts("old-secret") {
 		t.Error("the old token still works after being removed from the file")
 	}
@@ -126,23 +126,48 @@ func TestARotationHasNoWindowWhereNeitherTokenWorks(t *testing.T) {
 	}
 }
 
-// waitForReload drives the throttled stat forward.
+// reloadNow re-reads the file without waiting for the throttle.
 //
-// The loader only checks the file every few seconds so a busy server does
-// not stat it per request. Rather than sleeping that out, the test polls
-// until the change lands and fails if it never does, which keeps the test
-// fast on a machine where the reload is immediate.
-func waitForReload(t *testing.T, creds *govern.Credentials) {
+// The loader only stats the file every few seconds so a busy server does
+// not stat it per request. Waiting that out is a test about the throttle,
+// which is [TestAChangeIsPickedUpWithoutAnybodyAskingFor] below; the
+// rotation tests are about which tokens are accepted while the file
+// changes underneath them, and polling for it only gave them a way to fail
+// on a loaded machine with a message that named the wrong cause.
+func reloadNow(t *testing.T, creds *govern.Credentials) {
 	t.Helper()
-	deadline := time.Now().Add(15 * time.Second)
-	start := creds.Active()
+	if err := govern.ReloadNowForTest(creds); err != nil {
+		t.Fatalf("the rewritten file did not load: %v", err)
+	}
+}
+
+// TestAChangeIsPickedUpWithoutAnybodyAskingFor.
+//
+// The half reloadNow skips. A platform rewrites the mounted secret and
+// nothing calls anything; the next lookup has to see it, or rotation means
+// a restart after all.
+func TestAChangeIsPickedUpWithoutAnybodyAskingFor(t *testing.T) {
+	quickReload(t)
+	path := writeCredentials(t, oneToken)
+	creds, err := govern.LoadCredentials(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rewrite(t, path, newTokenOnly)
+
+	// Tighter than the 20ms throttle, so a machine under load gets hundreds
+	// of attempts rather than a handful.
+	deadline := time.Now().Add(30 * time.Second)
 	for time.Now().Before(deadline) {
-		if creds.Active() != start {
+		if _, ok := creds.Lookup("new-secret"); ok {
 			return
 		}
-		time.Sleep(200 * time.Millisecond)
+		time.Sleep(5 * time.Millisecond)
 	}
-	t.Fatalf("the file changed and the loader never picked it up (still %d active)", start)
+	// The loader swallows read errors on purpose, so say what the file holds
+	// now rather than leaving "it never happened" as the only evidence.
+	t.Fatalf("the rewritten file was never picked up; loading it directly gives %v",
+		govern.ReloadNowForTest(creds))
 }
 
 // TestATokenStopsWorkingAtItsNotAfter.

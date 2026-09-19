@@ -141,7 +141,13 @@ function binary() {
     process.platform === "win32" ? "truegrain-e2e.exe" : "truegrain-e2e",
   );
   mkdirSync(dirname(out), { recursive: true });
-  const r = run("go", ["build", "-o", out, "./cmd/truegrain"], { cwd: repo });
+  // -buildvcs=false because this binary is a test fixture, not a release.
+  // The screenshot job runs in the Playwright container, where git sees the
+  // checkout as owned by another user and exits 128, and Go reports that as
+  // a build failure rather than skipping the stamp it cannot read.
+  const r = run("go", ["build", "-buildvcs=false", "-o", out, "./cmd/truegrain"], {
+    cwd: repo,
+  });
   if (r.status !== 0) {
     console.error(r.stderr);
     process.exit(1);
