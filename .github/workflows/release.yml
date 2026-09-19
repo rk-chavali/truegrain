@@ -31,6 +31,19 @@ jobs:
           # a shallow clone produces a release that misreports both.
           fetch-depth: 0
 
+      # The chart defaults image.tag to .Chart.AppVersion, so a chart left
+      # behind does not fail: it quietly installs the previous engine. Checked
+      # here because a tag is the only moment the right answer is known.
+      - name: The chart names the version being released
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          declared=$(awk -F'"' '/^appVersion:/ {print $2}' deploy/helm/truegrain/Chart.yaml)
+          if [ "$tag" != "$declared" ]; then
+            echo "Chart.yaml appVersion is $declared and this release is $tag."
+            echo "helm install would deploy $declared without saying so."
+            exit 1
+          fi
+
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
