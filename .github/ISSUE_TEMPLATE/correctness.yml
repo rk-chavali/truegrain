@@ -1,0 +1,42 @@
+name: Wrong number
+description: A metric returned a value you believe is incorrect
+labels: ["correctness"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The most valuable report this project can get. Every query response
+        carries the compiled SQL and the model version precisely so that this
+        form can be filled in.
+  - type: textarea
+    id: request
+    attributes:
+      label: The request
+      description: The metrics, dimensions, filters and grain you asked for.
+      render: json
+    validations: { required: true }
+  - type: textarea
+    id: sql
+    attributes:
+      label: The compiled SQL
+      description: Copied from `compiled_sql` in the response.
+      render: sql
+    validations: { required: true }
+  - type: input
+    id: version
+    attributes:
+      label: model_version
+      placeholder: "sha256:..."
+    validations: { required: true }
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected, and why
+      description: If you have SQL that produces the number you expect, include it.
+    validations: { required: true }
+  - type: textarea
+    id: model
+    attributes:
+      label: The relevant model definitions
+      description: The metric, its datasets, and any relationship between them.
+      render: yaml

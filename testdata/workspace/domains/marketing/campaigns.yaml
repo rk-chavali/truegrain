@@ -1,0 +1,105 @@
+# Marketing's own model. A stock Ossie document: nothing in this file mentions
+# namespaces, imports or anything else this engine invented. It is portable to
+# any other OSI tool exactly as written.
+#
+# `orders` is addressed by its bare name because namespace.yaml imported it.
+# That aliasing is what keeps this file portable: a three-part reference would
+# make it meaningless outside this workspace.
+
+version: "0.2.0.dev0"
+
+semantic_model:
+  - name: marketing
+    description: Campaign spend and the revenue attributed to it.
+    ai_context:
+      instructions: >
+        Campaigns drive orders. Spend lives here; the revenue a campaign
+        produced comes from the orders dataset the sales team exports.
+
+    datasets:
+      - name: campaigns
+        source: main.campaigns
+        primary_key: [campaign_id]
+        unique_keys:
+          # At most one campaign is credited per order. Declaring it is what
+          # lets the planner prove that joining to orders cannot repeat an
+          # order row, so revenue attributed by channel is not inflated.
+          - [order_id]
+        description: One row per marketing campaign.
+        fields:
+          - name: campaign_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: campaign_id
+            datatype: Integer
+            description: Campaign identifier.
+
+          - name: order_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: order_id
+            datatype: Integer
+            description: The order this campaign is credited with.
+
+          - name: channel
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: channel
+            datatype: String
+            dimension: {}
+            description: Acquisition channel, one of search, social, email, referral.
+            ai_context:
+              synonyms: ["acquisition channel", "source"]
+
+          - name: spend
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: spend
+            datatype: Decimal
+            description: Money spent on this campaign, in dollars.
+
+    relationships:
+      # The join into the imported dataset. It is declared here because it is
+      # marketing's join: sales has no opinion about campaigns.
+      - name: campaigns_to_orders
+        from: campaigns
+        to: orders
+        from_columns: [order_id]
+        to_columns: [order_id]
+        ai_context:
+          instructions: Each campaign is credited with exactly one order.
+
+    metrics:
+      - name: campaign_spend
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: SUM(campaigns.spend)
+        datatype: Decimal
+        description: Total marketing spend across all campaigns.
+        ai_context:
+          synonyms: ["spend", "marketing cost"]
+
+      - name: attributed_revenue
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: SUM(orders.order_total)
+        datatype: Decimal
+        description: Revenue from orders credited to a campaign.
+        ai_context:
+          synonyms: ["marketing revenue", "attributed sales"]
+
+      - name: return_on_spend
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: SUM(orders.order_total) / NULLIF(SUM(campaigns.spend), 0)
+        datatype: Decimal
+        description: Attributed revenue divided by campaign spend, computed after aggregation.
+        ai_context:
+          synonyms: ["ROAS", "return on ad spend"]

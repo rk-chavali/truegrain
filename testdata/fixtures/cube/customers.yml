@@ -1,0 +1,15 @@
+cubes:
+  - name: customers
+    sql_table: analytics.customers
+    dimensions:
+      - name: customer_id
+        sql: customer_id
+        type: number
+        primary_key: true
+      - name: region
+        sql: region
+        type: string
+    measures:
+      - name: customer_count
+        sql: customer_id
+        type: count_distinct

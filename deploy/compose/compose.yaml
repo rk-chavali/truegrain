@@ -1,0 +1,188 @@
+# A whole truegrain in one command.
+#
+#   docker compose up
+#
+# Brings up a PostgreSQL with the demo fixture loaded, the engine serving
+# REST on 8080 and the PostgreSQL wire protocol on 5439, and a console you
+# can open. Nothing here needs a cloud account.
+#
+# This exists because "I ran the binary" and "I deployed this" were a long
+# way apart, and the distance was mostly undocumented. Somebody evaluating a
+# semantic layer should reach a governed number and a refusal within a few
+# minutes, and they should be able to read this file and see exactly what
+# was configured to get there.
+#
+# Not a production deployment, and it says so in three places rather than
+# leaving somebody to infer it. The passwords are fixed and in this file, the
+# engine is unauthenticated, and everything binds to localhost.
+
+name: truegrain
+
+services:
+  warehouse:
+    image: postgres:17
+    environment:
+      # A fixed password in a committed file, which is safe here only because
+      # nothing outside this compose network can reach the port and there is
+      # nothing in the database but the demo fixture. Anywhere else this is
+      # the mistake the rest of this project goes out of its way to avoid.
+      POSTGRES_PASSWORD: truegrain-demo-only
+      POSTGRES_DB: warehouse
+    ports:
+      # Bound to loopback rather than published broadly, so a laptop on a
+      # shared network does not expose a database while somebody is reading
+      # the quickstart.
+      - "127.0.0.1:55432:5432"
+    volumes:
+      # The same fixture the correctness suite runs against, unmodified. A
+      # Postgres-specific variant would mean the demo and the tests were no
+      # longer the same data, and the 885.50 somebody sees here would stop
+      # being the number the suite proves.
+      # Creates the control plane's own database. Runs first: the
+      # directory executes in filename order.
+      - ./00-control-db.sql:/docker-entrypoint-initdb.d/00-control-db.sql:ro
+      - ../../testdata/fixtures/seed.sql:/docker-entrypoint-initdb.d/10-seed.sql:ro
+    healthcheck:
+      # The engine connects eagerly at startup, so it must not start before
+      # the database can answer. Without this the stack comes up broken about
+      # half the time, which is the kind of flakiness that makes somebody
+      # close the tab.
+      test: ["CMD-SHELL", "pg_isready -U postgres -d warehouse"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  # The one to open. Accounts, the API and the UI on a single port.
+  #
+  #   http://localhost:8088
+  #
+  # The first person to open it creates the owner account, and sign-up
+  # closes as soon as that exists. Nothing is seeded: there is no default
+  # password to forget to change.
+  console:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    depends_on:
+      warehouse:
+        condition: service_healthy
+    environment:
+      TRUEGRAIN_DSN: postgres://postgres:truegrain-demo-only@warehouse:5432/warehouse?sslmode=disable
+      # The control plane's own database, not the warehouse.
+      TRUEGRAIN_CONTROL_DSN: postgres://postgres:truegrain-demo-only@warehouse:5432/truegrain_control?sslmode=disable
+      # Warehouse credentials entered in the browser are encrypted with
+      # this before they are stored, and the process refuses to start
+      # without it. Fixed here because this whole file is a demo; anywhere
+      # else, generate one and keep it out of source:
+      #
+      #   openssl rand -base64 32
+      #
+      # Changing it later does not re-encrypt what is already stored, so
+      # those connections have to be entered again.
+      TRUEGRAIN_CONTROL_KEY: demo-only-key-not-for-anything-real-0000
+    volumes:
+      - ./models:/models:ro
+    ports:
+      # 8088 rather than 8080, because 8080 is the single most contested
+      # port on a developer machine and a stack that will not start is a
+      # worse first impression than an unfamiliar number.
+      - "127.0.0.1:8088:8080"
+    command:
+      - serve
+      - console
+      - -models=/models
+      - -addr=0.0.0.0:8080
+      - -dialect=postgres
+      - -dsn-env=TRUEGRAIN_DSN
+      - -max-concurrent-queries=8
+      # No TLS, so passwords and the session cookie cross the network in
+      # the clear. Acceptable only because this binds to loopback on one
+      # machine, and the binary makes you say so rather than defaulting
+      # to it.
+      - -insecure
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/truegrain", "version"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # The REST API on its own, unauthenticated, for curl and the SDKs.
+  #
+  # Separate from the console because they authenticate differently: this
+  # one takes a bearer token or nothing, and the console takes a session
+  # cookie. Running both is what lets somebody try the API without
+  # signing in first.
+  engine:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    depends_on:
+      warehouse:
+        condition: service_healthy
+    environment:
+      # The engine reads the variable named by -dsn-env, never a DSN on the
+      # command line, because a connection string on a command line is in the
+      # process list. That rule holds even here, where the password is public.
+      TRUEGRAIN_DSN: postgres://postgres:truegrain-demo-only@warehouse:5432/warehouse?sslmode=disable
+      # A container's loopback is only its own, so this binds to all
+      # interfaces, and the binary refuses to do that unauthenticated.
+      # That refusal is correct and this file used to trip over it: the
+      # service exited at boot with "refusing to serve without
+      # authentication" every time, which nobody noticed because the
+      # stack had only ever been parsed, not run.
+      #
+      # So it gets a token. Fixed and public here, which is safe only
+      # because nothing outside this compose network can reach the port.
+      TRUEGRAIN_TOKEN: demo-only-token-not-a-real-secret
+    volumes:
+      - ./models:/models:ro
+    ports:
+      - "127.0.0.1:8081:8080"
+    command:
+      - serve
+      - rest
+      - -token-env=TRUEGRAIN_TOKEN
+      - -models=/models
+      - -addr=0.0.0.0:8080
+      - -dialect=postgres
+      - -dsn-env=TRUEGRAIN_DSN
+      # A cap the bare binary does not set, because the right number is a
+      # property of the warehouse. Here the warehouse is a container with
+      # default settings, so eight is generous and bounded.
+      - -max-concurrent-queries=8
+      - -cors-origin=http://localhost:5180
+      - -identity=you@example.com
+      - -audit-readers=you@example.com
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/truegrain", "version"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # The same model on the PostgreSQL wire protocol, which is the only way a
+  # BI tool can reach it. Point Metabase, Superset or DBeaver at 5439.
+  bi:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    depends_on:
+      warehouse:
+        condition: service_healthy
+    environment:
+      TRUEGRAIN_DSN: postgres://postgres:truegrain-demo-only@warehouse:5432/warehouse?sslmode=disable
+    volumes:
+      - ./models:/models:ro
+    ports:
+      - "127.0.0.1:5439:5439"
+    command:
+      - serve
+      - postgres
+      - -models=/models
+      - -addr=0.0.0.0:5439
+      - -dialect=postgres
+      - -dsn-env=TRUEGRAIN_DSN
+      - -max-concurrent-queries=8
+      - -identity=you@example.com
+      # Unauthenticated, so no token crosses an unencrypted socket. Adding
+      # -token-env here without TLS would be refused by the binary, which is
+      # the behaviour that keeps this file from teaching a bad habit.

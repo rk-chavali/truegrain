@@ -1,0 +1,38 @@
+# Governance for the two-team workspace.
+#
+# The point this file demonstrates: the grant is written by the team that owns
+# the column, and it follows that column into every namespace that imported it.
+# Marketing cannot escape it by aliasing the import, because policy resolves
+# against where a field was defined and not against the name it is used by.
+version: 1
+
+tags:
+  - name: revenue
+    description: Order values. Owned by sales, enforced everywhere they are read.
+    fields:
+      - sales.orders.order_total
+
+  - name: pii
+    description: Everything in the sales namespace that identifies a customer.
+    namespaces: [sales]
+    # Most of sales is not sensitive; tag the namespace and carve the rest out.
+    except:
+      - sales.orders.order_id
+      - sales.orders.customer_id
+      - sales.orders.order_date
+      - sales.orders.status
+      - sales.orders.order_total
+      - sales.order_lines.order_id
+      - sales.order_lines.line_number
+      - sales.order_lines.item_id
+      - sales.order_lines.quantity
+      - sales.order_lines.line_amount
+      - sales.customers.customer_id
+      - sales.customers.region
+      - sales.customers.signup_date
+
+grants:
+  - principal: finance@acme.com
+    tags: [revenue]
+  - principal: privacy-cleared@acme.com
+    tags: [pii]

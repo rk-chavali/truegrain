@@ -1,0 +1,90 @@
+cubes:
+  - name: orders
+    sql_table: analytics.orders
+    description: One row per order.
+    joins:
+      # Cube states cardinality the same way Looker does.
+      - name: order_lines
+        relationship: one_to_many
+        sql: "${orders.order_id} = ${order_lines.order_id}"
+      - name: customers
+        relationship: many_to_one
+        sql: "${orders.customer_id} = ${customers.customer_id}"
+    dimensions:
+      - name: order_id
+        sql: order_id
+        type: number
+        primary_key: true
+      - name: customer_id
+        sql: customer_id
+        type: number
+      - name: status
+        sql: status
+        type: string
+        description: Where the order got to.
+      - name: created_at
+        sql: created_at
+        type: time
+      - name: is_large
+        sql: "amount > 100"
+        type: boolean
+    measures:
+      - name: total_revenue
+        sql: amount
+        type: sum
+        description: What the business calls revenue.
+      - name: count
+        type: count
+      - name: shipped_revenue
+        sql: amount
+        type: sum
+        filters:
+          - sql: "${CUBE}.status = 'shipped'"
+      - name: revenue_7d
+        sql: amount
+        type: sum
+        rolling_window:
+          trailing: 7 day
+      - name: revenue_per_order
+        sql: "${total_revenue} / NULLIF(${count}, 0)"
+        type: number
+
+  - name: order_lines
+    sql_table: analytics.order_lines
+    dimensions:
+      - name: line_id
+        sql: line_id
+        type: number
+        primary_key: true
+      - name: order_id
+        sql: order_id
+        type: number
+      - name: sku
+        sql: sku
+        type: string
+    measures:
+      - name: line_revenue
+        sql: line_amount
+        type: sum
+      - name: units
+        sql: quantity
+        type: sum
+
+  # No primary_key anywhere, which Cube allows and which costs the grain.
+  - name: web_events
+    sql_table: analytics.web_events
+    dimensions:
+      - name: event_type
+        sql: event_type
+        type: string
+    measures:
+      - name: event_count
+        type: count
+
+  # Defined by a query rather than a table.
+  - name: sessions
+    sql: "SELECT user_id, count(*) AS n FROM events GROUP BY 1"
+    dimensions:
+      - name: user_id
+        sql: user_id
+        type: number

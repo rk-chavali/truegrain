@@ -1,0 +1,1124 @@
+# OpenAPI description of the semantic engine's HTTP API.
+#
+# This file is the contract. SDKs are generated from it rather than hand
+# written, so a Python, TypeScript, Java or Rust client is a codegen run and not
+# a maintenance burden. Agent frameworks that consume OpenAPI (LangChain and
+# LlamaIndex toolkits among them) can discover every operation here with no
+# integration code at all.
+#
+# TestOpenAPIMatchesRoutes asserts that the paths below and the routes the
+# server actually registers are the same set. A published contract that drifts
+# from the running server is worse than no contract.
+
+openapi: 3.1.0
+
+info:
+  title: Semantic engine
+  version: "0.1.0"
+  description: |
+    An Apache Ossie semantic model compiled to governed, dialect-correct SQL.
+
+    There is no endpoint that accepts SQL, and there will not be one. The only
+    expressible request is a semantic one: metrics, dimensions and structured
+    filters. That is what makes an ungoverned query inexpressible rather than
+    merely discouraged.
+
+    Column access is resolved before SQL is emitted. A denied request returns a
+    refusal with a reason; it never returns an empty result set, because a
+    silent empty answer trains a caller to report a wrong number confidently.
+  license:
+    name: Apache 2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0
+
+servers:
+  - url: http://127.0.0.1:8080
+    description: Local development
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: metadata
+    description: Discovering what the model can answer.
+  - name: query
+    description: Asking questions and inspecting how they compile.
+  - name: operations
+    description: What this deployment enforces.
+
+paths:
+  /v1/health:
+    get:
+      tags: [operations]
+      operationId: getHealth
+      summary: What this deployment enforces, including what it does not
+      description: |
+        Deliberately unauthenticated. It discloses no model content, and an
+        operator needs to read it before holding a credential.
+      security: []
+      responses:
+        "200":
+          description: Configuration and its honest limits
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Health" }
+
+  /v1/model/version:
+    get:
+      tags: [operations]
+      operationId: getModelVersion
+      summary: The workspace digest currently served
+      responses:
+        "200":
+          description: Workspace name and digest
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  model: { type: string }
+                  model_version:
+                    type: string
+                    description: Content hash over every namespace digest.
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /v1/namespaces:
+    get:
+      tags: [metadata]
+      operationId: listNamespaces
+      summary: The namespaces in the workspace, their owners and availability
+      description: |
+        A namespace is one team's independently owned set of definitions. A
+        namespace that failed to load is reported with its error rather than
+        omitted, so a caller can tell a failure from a model that never had
+        those metrics.
+      responses:
+        "200":
+          description: Namespaces
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [workspace, workspace_digest, namespaces]
+                properties:
+                  workspace: { type: string }
+                  workspace_digest: { type: string }
+                  namespaces:
+                    type: array
+                    items: { $ref: "#/components/schemas/Namespace" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /v1/metrics:
+    get:
+      tags: [metadata]
+      operationId: listMetrics
+      summary: Every metric the caller may read
+      description: |
+        Metrics are returned with their namespace-qualified name. A metric whose
+        underlying columns this identity cannot read still appears, but its
+        dimension list is filtered to what the identity may group by.
+      parameters:
+        - name: search
+          in: query
+          required: false
+          schema: { type: string }
+          description: Case-insensitive substring over name and description.
+      responses:
+        "200":
+          description: Metrics
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [model, model_version, metrics]
+                properties:
+                  model: { type: string }
+                  model_version: { type: string }
+                  metrics:
+                    type: array
+                    items: { $ref: "#/components/schemas/Metric" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /v1/metrics/{name}:
+    get:
+      tags: [metadata]
+      operationId: describeMetric
+      summary: One metric's definition and the dimensions legal for it
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema: { type: string }
+          description: |
+            Qualified as `namespace.metric`, or bare when unambiguous across the
+            workspace. An ambiguous bare name is refused with the candidates.
+      responses:
+        "200":
+          description: Metric definition
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MetricDetail" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/Refused" }
+
+  /v1/dimensions:
+    get:
+      tags: [metadata]
+      operationId: listDimensions
+      summary: Dimensions available for grouping and filtering
+      parameters:
+        - name: metric
+          in: query
+          required: false
+          schema: { type: string }
+          description: |
+            Restrict to dimensions valid for this metric, which is almost always
+            what you want. Without it, every dimension in the workspace.
+      responses:
+        "200":
+          description: Dimensions
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [dimensions]
+                properties:
+                  dimensions:
+                    type: array
+                    items: { $ref: "#/components/schemas/Dimension" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/Refused" }
+
+  /v1/query:
+    post:
+      tags: [query]
+      operationId: query
+      summary: Answer a question and return rows
+      description: |
+        The response always carries the compiled SQL and the workspace digest
+        that produced it, so a disputed number can be traced to an exact set of
+        definitions.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/QueryRequest" }
+      responses:
+        "200":
+          description: Rows
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/QueryResult" }
+        "400": { $ref: "#/components/responses/Refused" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Refused" }
+        "404": { $ref: "#/components/responses/Refused" }
+        "422": { $ref: "#/components/responses/Refused" }
+        "503": { $ref: "#/components/responses/Refused" }
+
+  /v1/reload:
+    post:
+      tags: [deploy]
+      operationId: reload
+      summary: Tell the engine to re-read its model source
+      description: |
+        Available only on an engine following a repository, and 404 otherwise:
+        one reading a model from a path has nothing to re-read, and accepting
+        the call would let a pipeline believe it had deployed.
+
+        **This carries no model, deliberately.** It means "look now", not
+        "install this". The engine already follows git on a timer, so the only
+        thing this changes is the wait: a pipeline that merges and then calls
+        this gets the new model in a second rather than at the next poll. A
+        route that accepted a model would be a second way into production, one
+        that skips the pull request, the checks and the diff that reports which
+        numbers move.
+
+        Requires the `deploy:model` scope, which is never implied by
+        `read:model` or `run:query`. Reading and querying answer for the
+        caller; this changes what every caller is answered with, so a leaked
+        deploy credential is a different incident and is therefore a different
+        credential.
+
+        The reply names no commit, because a sync is not instant and reporting
+        one before the swap happened would be a claim a pipeline then asserts
+        as fact. Poll `/v1/health` and read `origin.commit` to know when the
+        new model is the one answering.
+
+        A model that fails to load is not a failure of this call: the engine
+        keeps serving the previous one, and the 502 says so.
+      responses:
+        "202":
+          description: |
+            The engine is re-reading its source, or already was. Both answer
+            202: a caller asking for a sync while one runs is getting what they
+            asked for, and reporting a rate limit would have them retry
+            something already happening.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status: { type: string, enum: [reading, already running] }
+                  note: { type: string }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Refused" }
+        "404": { $ref: "#/components/responses/Refused" }
+        "502": { $ref: "#/components/responses/Refused" }
+
+  /v1/compile:
+    post:
+      tags: [query]
+      operationId: compile
+      summary: Return the SQL a request compiles to, without running it
+      description: |
+        A dry run. The governance gate runs exactly as it does for a query, so
+        this is not a way to read the SQL for a metric you may not query: a
+        denied request returns a refusal and no SQL.
+
+        The decision is audited as `compiled` rather than `allowed`, which keeps
+        inspecting the model distinguishable from executing against it.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/QueryRequest" }
+      responses:
+        "200":
+          description: Compiled SQL
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CompileResult" }
+        "400": { $ref: "#/components/responses/Refused" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Refused" }
+        "404": { $ref: "#/components/responses/Refused" }
+        "422": { $ref: "#/components/responses/Refused" }
+        "503": { $ref: "#/components/responses/Refused" }
+
+  # Asynchronous execution. A warehouse query can run longer than the default
+  # HTTP timeout of every agent framework in use; synchronously the client
+  # gives up, retries, and the warehouse runs and bills the query twice.
+  /v1/jobs:
+    post:
+      tags: [query]
+      operationId: submitJob
+      summary: Start a query in the background and return a job identifier
+      description: |
+        Compilation, and therefore the governance gate, happens synchronously
+        before the job exists. A request the caller may not make never becomes
+        a job: it is refused on this call. A 202 is therefore a promise that
+        the query was authorized, not merely that it was accepted.
+
+        The compiled SQL is returned immediately, so a caller can show its work
+        without waiting for the warehouse.
+
+        A job is visible only to the identity that submitted it.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/QueryRequest" }
+      responses:
+        "202":
+          description: Accepted and running
+          headers:
+            Location:
+              description: The job resource to poll.
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/JobAccepted" }
+        "400": { $ref: "#/components/responses/Refused" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Refused" }
+        "404": { $ref: "#/components/responses/Refused" }
+        "422": { $ref: "#/components/responses/Refused" }
+        "503": { $ref: "#/components/responses/Refused" }
+
+  /v1/jobs/{id}:
+    get:
+      tags: [query]
+      operationId: getJob
+      summary: Poll a job and collect a page of its rows
+      description: |
+        Returns 200 whenever the job is readable by this caller, including when
+        the job itself failed: the poll succeeded, and the failure is described
+        in the body with the same `code`, `hint` and `retry` a synchronous
+        refusal carries. Branch on `state`, not on the status code.
+
+        `row_count` is the size of the whole result rather than of the page, so
+        a caller knows how much remains before walking it. When `next_cursor`
+        is present there are more rows; pass it back to read the next page.
+
+        A job belonging to another identity returns 404 rather than 403, so
+        job identifiers cannot be probed for existence.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+        - name: cursor
+          in: query
+          required: false
+          description: Opaque cursor from a previous page's `next_cursor`.
+          schema: { type: string }
+        - name: page_size
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 10000, default: 1000 }
+      responses:
+        "200":
+          description: Job state, and rows once it has succeeded
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/JobStatus" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/Refused" }
+        "422": { $ref: "#/components/responses/Refused" }
+    delete:
+      tags: [query]
+      operationId: cancelJob
+      summary: Cancel a running query
+      description: |
+        Idempotent. Cancelling a job that already finished returns its existing
+        state rather than an error.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: The job state after cancellation
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  job_id: { type: string }
+                  state: { $ref: "#/components/schemas/JobState" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/Refused" }
+
+  /v1/audit:
+    get:
+      tags: [governance]
+      operationId: listAudit
+      summary: Read the decisions this engine recently made
+      description: |
+        Every decision the engine made, newest first: what was allowed, what
+        was refused for correctness, what was denied for access, and what
+        failed. This is the window an operator reads to answer "why did that
+        agent give up", which nothing else can answer.
+
+        Not served unless an operator names who may read it. The record
+        contains every caller's activity, which discloses what other teams
+        query and which fields are protected, so an engine with no reader
+        configured answers 404: the capability is absent rather than withheld.
+        A caller who is authenticated but not a named reader gets 403.
+
+        This is a bounded in-memory window, not the whole record. An engine
+        started with an audit file keeps everything there; this is what it can
+        still show you without shelling into the container.
+
+        Carries no filter values, no compiled SQL and no result rows, for the
+        same reason the audit file does not.
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          description: Most recent events to return.
+          schema: { type: integer, minimum: 1, maximum: 200, default: 200 }
+        - name: decision
+          in: query
+          required: false
+          description: Return only this decision. `refused` is the usual one.
+          schema:
+            type: string
+            enum: [allowed, refused, denied, compiled, error]
+      responses:
+        "200":
+          description: Recorded decisions, newest first
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [events, count]
+                properties:
+                  events:
+                    type: array
+                    items: { $ref: "#/components/schemas/AuditEvent" }
+                  count: { type: integer }
+                  note:
+                    type: string
+                    description: Says that this is a window rather than the whole record.
+        "400": { $ref: "#/components/responses/Refused" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Refused" }
+        "404": { $ref: "#/components/responses/Refused" }
+
+
+  /v1/doctor:
+    get:
+      tags: [governance]
+      operationId: doctor
+      summary: Ask the warehouse whether this model is still true
+      description: |
+        Everything else validates the model against itself: the YAML parses,
+        the joins resolve, the expressions compile. None of that notices that
+        somebody dropped a column last Tuesday, and the first sign of that is
+        usually a caller getting an error, which is the most expensive place
+        to find it.
+
+        Metadata only. It reads no rows and needs no more than permission to
+        list a schema, which is why read:model is enough: a pipeline that
+        checks a model should be able to run this without also holding a
+        credential that can read the warehouse.
+
+        Reports rather than refuses. A model can be wrong in ways that do not
+        matter yet, and deciding which of those to act on is a human job.
+      responses:
+        "200":
+          description: What the warehouse says about the model
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, tables_checked, findings]
+                properties:
+                  ok:
+                    type: boolean
+                    description: False when a finding would break a query.
+                  tables_checked: { type: integer }
+                  findings:
+                    type: array
+                    items: { type: object }
+                  skipped:
+                    type: string
+                    description: Why nothing was checked, when nothing was.
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Refused" }
+
+  /v1/doctor/history:
+    get:
+      tags: [governance]
+      operationId: doctorHistory
+      summary: What the scheduled warehouse check has seen
+      description: |
+        Drift is found by looking regularly, not by looking once. An engine
+        started with -doctor-every checks the warehouse on a timer and keeps a
+        bounded history here, which is how "when did this start" stays
+        answerable.
+
+        Each run records the model version it was checking, so a result from
+        before a reload is not read as evidence about the model after it.
+
+        404 when nothing is scheduled. An engine checking nothing has no
+        history, as opposed to a history in which nothing went wrong.
+      responses:
+        "200":
+          description: Recent scheduled checks, oldest first
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [runs, every_seconds]
+                properties:
+                  every_seconds:
+                    type: integer
+                    description: The configured interval.
+                  drifted:
+                    type: integer
+                    description: Runs that completed and found the warehouse changed.
+                  runs:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        at: { type: string, format: date-time }
+                        ok: { type: boolean }
+                        tables_checked: { type: integer }
+                        findings: { type: integer }
+                        error:
+                          type: string
+                          description: Set when the check could not run at all.
+                        model_version: { type: string }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Refused" }
+        "404": { $ref: "#/components/responses/Refused" }
+
+  /v1/tests:
+    post:
+      tags: [governance]
+      operationId: runTests
+      summary: Assert what this model answers
+      description: |
+        validate says the model holds together and diff says a number changed.
+        Neither says a number was ever right, which is the gap an adopter
+        notices first because correctness is the entire pitch.
+
+        Refusal assertions need no warehouse, so a caller holding only
+        read:model can still prove the model declines a fan-out. Cases that
+        would execute a query are withheld from such a caller and counted,
+        rather than run or silently dropped: a suite that quietly checked half
+        of what it claimed is worse than one that failed.
+
+        404 until an operator names a test suite. An engine nobody pointed at
+        one has no tests, which is a different thing from having tests that
+        all pass.
+      responses:
+        "200":
+          description: The result of every case
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, passed, failed, skipped, results]
+                properties:
+                  ok: { type: boolean }
+                  passed: { type: integer }
+                  failed: { type: integer }
+                  skipped: { type: integer }
+                  withheld:
+                    type: integer
+                    description: Cases this credential may not run.
+                  results:
+                    type: array
+                    items: { type: object }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Refused" }
+        "404": { $ref: "#/components/responses/Refused" }
+        "422": { $ref: "#/components/responses/Refused" }
+
+  /v1/policy:
+    get:
+      tags: [governance]
+      operationId: policy
+      summary: What this engine enforces
+      description: |
+        The resolver in force, whether it makes column-level decisions at all,
+        and the notes that say plainly what is not enforced. An engine running
+        allow-all says so here rather than letting a reader assume a gate
+        exists because the product has one.
+
+        Says nothing about who is allowed what. That is deliberate.
+      responses:
+        "200":
+          description: The governance configuration
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [governance]
+                properties:
+                  governance: { type: object }
+                  enforcement_notes:
+                    type: array
+                    items: { type: string }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Refused" }
+
+  /v1/policy/explain:
+    post:
+      tags: [governance]
+      operationId: explainPolicy
+      summary: What you may read of a metric
+      description: |
+        Answers why a column cannot be grouped by, without running a query and
+        being denied.
+
+        For the calling identity only, and that is a security property rather
+        than a limitation. An endpoint that reported what somebody else can
+        see would publish the policy it was configured to enforce, so asking
+        about another identity is a different endpoint with its own
+        authorization and this engine does not serve one.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [metric]
+              properties:
+                metric:
+                  type: string
+                  description: Qualified metric name, as /v1/metrics reports it.
+      responses:
+        "200":
+          description: The dimensions this caller may group that metric by
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [metric, readable]
+                properties:
+                  metric: { type: string }
+                  identity: { type: string }
+                  readable:
+                    type: array
+                    items: { type: string }
+                  governance: { type: object }
+        "400": { $ref: "#/components/responses/Refused" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Refused" }
+        "404": { $ref: "#/components/responses/Refused" }
+
+  /v1/diff:
+    get:
+      tags: [governance]
+      operationId: diff
+      summary: Did the last model reload move a number
+      description: |
+        The diff command compares two checkouts. This compares the model being
+        served against the one served before it, which is the comparison
+        nobody can make from outside the process.
+
+        The comparison is on compiled SQL rather than on model text, because
+        an undocumented change to a compiled result is a silent correctness
+        incident: the model still validates, the tests still pass, and every
+        dashboard quietly moves. Renaming a description is invisible here;
+        changing a join, a grain or an expression is not.
+
+        404 until a reload has happened. Having served only one model is a
+        different answer from nothing having changed, and only one of them is
+        reassuring.
+      responses:
+        "200":
+          description: What the reload changed
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [changed, from, to]
+                properties:
+                  changed: { type: boolean }
+                  from: { type: string, description: The model version served before. }
+                  to: { type: string, description: The model version serving now. }
+                  added:
+                    type: array
+                    items: { type: string }
+                  removed:
+                    type: array
+                    items: { type: string }
+                  altered:
+                    type: object
+                    description: Request label to its compiled SQL before and after.
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Refused" }
+        "404": { $ref: "#/components/responses/Refused" }
+
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: |
+        The token identifies a workload, and that workload identity is what the
+        governance gate and the executor use. Grants go to service accounts and
+        groups, never to individual humans.
+
+  responses:
+    Unauthorized:
+      description: Missing or unrecognised credentials
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Refusal" }
+    Refused:
+      description: |
+        The engine understood the request and declined it. Branch on `retry`.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Refusal" }
+
+  schemas:
+    AuditEvent:
+      type: object
+      description: |
+        One decision, as recorded. `refused` and `denied` are deliberately
+        separate: denied is access, meaning this caller may not read something,
+        and refused is correctness, meaning nobody can be told this accurately
+        and the hint names a question that can be answered. Reporting them
+        together would count every fan-out as an access incident.
+      required: [time, decision]
+      properties:
+        time: { type: string, format: date-time }
+        identity:
+          type: string
+          description: Who asked. `anonymous` on an engine without authentication.
+        model_name: { type: string }
+        model_version: { type: string }
+        namespace: { type: string }
+        metrics:
+          type: array
+          items: { type: string }
+        dimensions:
+          type: array
+          items: { type: string }
+        decision:
+          type: string
+          enum: [allowed, refused, denied, compiled, error]
+        refusal_code:
+          type: string
+          description: Which refusal, for a decision of `refused`.
+        retry:
+          type: string
+          enum: [modify, later, never]
+          description: What the caller should do about a refusal.
+        reason:
+          type: string
+          description: The refusal in the engine's own words, as the caller received it.
+        hint:
+          type: string
+          description: What would answer instead. The actionable half of a refusal.
+        denied_fields:
+          type: array
+          description: Semantic fields refused, on a denial. Never returned to the denied caller.
+          items: { type: string }
+        sql_hash:
+          type: string
+          description: Identifies the compiled statement without disclosing it.
+        dialect: { type: string }
+        job_id:
+          type: string
+          description: The warehouse's own identifier, so two logs can be joined.
+        row_count: { type: integer }
+        bytes_billed:
+          type: integer
+          format: int64
+          description: |
+            What the warehouse says the query cost. Absent means not reported
+            rather than free: DuckDB bills nobody and reports nothing.
+        duration_ms: { type: integer, format: int64 }
+        error:
+          type: string
+          description: The failure, for a decision of `error`.
+    Refusal:
+      type: object
+      required: [code, reason, retry]
+      properties:
+        code:
+          type: string
+          description: Machine-readable reason. Branch on this, not on the text.
+          examples: [fan_out_would_inflate, access_denied, unknown_metric]
+        reason:
+          type: string
+          description: One sentence stating what was wrong.
+        hint:
+          type: string
+          description: |
+            What to do instead. For a fan-out refusal this names the metrics
+            defined at the grain where the question is well defined.
+        retry: { $ref: "#/components/schemas/Retry" }
+
+    Retry:
+      type: string
+      enum: [modify, later, never]
+      description: |
+        What a caller should do about a refusal. This is the field an agent
+        branches on; without it a caller either gives up on a typo or loops
+        forever on a denial.
+
+        `modify`: the request is answerable but not as written. Change the
+        arguments and try again; repeating it unchanged will not work.
+
+        `later`: something outside the request failed, such as the policy
+        source being unreachable, or the caller is at their concurrency limit.
+        The same request may succeed later.
+
+        `never`: no version of this request from this caller will succeed.
+        Stop, and say so rather than guessing.
+
+    Filter:
+      type: object
+      required: [dimension, op]
+      description: |
+        A structured predicate. Never a SQL fragment: that is what keeps an
+        ungoverned predicate inexpressible.
+      properties:
+        dimension:
+          type: string
+          description: "`dataset.field`, or `namespace.dataset.field`."
+        op:
+          type: string
+          enum: [eq, ne, in, not_in, gt, gte, lt, lte, between, is_null, is_not_null]
+        values:
+          type: array
+          description: |
+            Value count depends on the operator: one for the comparisons, two
+            for `between`, one or more for `in` and `not_in`, none for the null
+            checks. Values are validated against the dimension's declared type
+            before planning, and are always bound as parameters.
+          items:
+            anyOf:
+              - { type: string }
+              - { type: number }
+              - { type: boolean }
+
+    Order:
+      type: object
+      required: [field]
+      properties:
+        field:
+          type: string
+          description: "An output column name: a metric name or a dimension field name."
+        desc: { type: boolean, default: false }
+
+    QueryRequest:
+      type: object
+      required: [metrics]
+      properties:
+        metrics:
+          type: array
+          minItems: 1
+          items: { type: string }
+          description: |
+            Qualified as `namespace.metric`, or bare when unambiguous. Metrics
+            at different grains, or in different namespaces, are aggregated
+            separately and joined on the shared dimensions.
+        dimensions:
+          type: array
+          items: { type: string }
+          description: "`dataset.field`, or `namespace.dataset.field`."
+        filters:
+          type: array
+          items: { $ref: "#/components/schemas/Filter" }
+        grain:
+          type: string
+          enum: [second, minute, hour, day, week, month, quarter, year]
+          description: |
+            Time bucket applied to the selected time dimension. Requesting a
+            grain with no time dimension selected is refused rather than ignored.
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 100000
+          default: 1000
+        order_by:
+          type: array
+          items: { $ref: "#/components/schemas/Order" }
+
+    QueryResult:
+      type: object
+      required: [columns, rows, row_count, compiled_sql, model_version, dialect]
+      properties:
+        columns: { type: array, items: { type: string } }
+        rows:
+          type: array
+          description: Row-major, aligned to `columns`. A SQL null is JSON null.
+          items: { type: array, items: {} }
+        row_count: { type: integer }
+        compiled_sql:
+          type: string
+          description: |
+            The exact statement executed. Returned on every response on purpose:
+            it is how a parity dispute gets settled.
+        namespace: { type: string }
+        model_version: { type: string }
+        dialect: { type: string }
+
+    CompileResult:
+      type: object
+      required: [compiled_sql, columns, dialect, model_version]
+      properties:
+        compiled_sql: { type: string }
+        columns: { type: array, items: { type: string } }
+        dialect: { type: string }
+        namespace: { type: string }
+        parts:
+          type: integer
+          description: |
+            How many facts were aggregated separately and joined. More than one
+            means the query spanned grains or namespaces.
+        model_version: { type: string }
+
+    Metric:
+      type: object
+      required: [name, namespace, description, dimensions]
+      properties:
+        name: { type: string, description: "Qualified `namespace.metric`." }
+        namespace: { type: string }
+        description:
+          type: string
+          description: |
+            Written for a non-technical reader. An agent picks the metric from
+            this text, so treat its quality as a product feature.
+        datatype: { type: string }
+        synonyms: { type: array, items: { type: string } }
+        dimensions:
+          type: array
+          items: { type: string }
+          description: Only the dimensions this identity may read.
+
+    MetricDetail:
+      allOf:
+        - $ref: "#/components/schemas/Metric"
+        - type: object
+          properties:
+            definition:
+              type: string
+              description: The Ossie ANSI_SQL expression, verbatim from the model.
+
+    Dimension:
+      type: object
+      required: [name, is_time]
+      properties:
+        name: { type: string, description: "`namespace.dataset.field`." }
+        namespace: { type: string }
+        description: { type: string }
+        datatype: { type: string }
+        is_time: { type: boolean }
+        synonyms: { type: array, items: { type: string } }
+        grains:
+          type: array
+          items: { type: string }
+          description: Present only for a time dimension.
+
+    Namespace:
+      type: object
+      required: [name, available, metric_count]
+      properties:
+        name: { type: string }
+        available:
+          type: boolean
+          description: |
+            False when the namespace failed to load. A server keeps serving the
+            rest, so one team cannot take the layer down for everyone.
+        digest: { type: string }
+        owners: { type: array, items: { type: string } }
+        metric_count: { type: integer }
+        error: { type: string, description: Present only when unavailable. }
+
+    Health:
+      type: object
+      required: [workspace, workspace_digest, dialect, governance, enforcement_notes]
+      properties:
+        workspace: { type: string }
+        workspace_digest: { type: string }
+        ossie_spec_version: { type: string }
+        origin:
+          type: object
+          description: |
+            Where the served model came from, absent when it was read from a
+            path. Present when the engine is following a repository, which is
+            how a disputed number is traced back to the commit that produced
+            it. Carries no credential: a repository URL with one in it is
+            refused at startup rather than stored and redacted here.
+          properties:
+            repository:
+              type: string
+              description: The clone URL, without credentials.
+            ref:
+              type: string
+              description: |
+                The branch, tag or commit asked for. Absent when the remote's
+                default branch is followed. A ref moves; read `commit` to know
+                what actually answered.
+            commit:
+              type: string
+              description: The revision serving right now.
+            subdirectory:
+              type: string
+              description: The directory inside the repository holding the workspace.
+        namespaces:
+          type: array
+          items: { $ref: "#/components/schemas/Namespace" }
+        dialect:
+          type: object
+          properties:
+            dialect: { type: string }
+            column_level_security: { type: boolean }
+            row_level_security: { type: boolean }
+            note: { type: string }
+        governance:
+          type: object
+          properties:
+            resolver: { type: string }
+            column_level: { type: boolean }
+            note: { type: string }
+        executor: { type: string }
+        metric_count: { type: integer }
+        dimension_count: { type: integer }
+        supported_filter_ops: { type: array, items: { type: string } }
+        supported_grains: { type: array, items: { type: string } }
+        enforcement_notes:
+          type: array
+          items: { type: string }
+          description: |
+            What this configuration does NOT enforce, in plain language.
+            Overstating a governance guarantee is worse than not offering one.
+
+    JobState:
+      type: string
+      enum: [running, succeeded, failed, cancelled]
+      description: |
+        `running` is the only non-terminal state. `cancelled` is distinct from
+        `failed`: the caller stopped it, the warehouse did not fail.
+
+    JobAccepted:
+      type: object
+      description: |
+        The acknowledgement of a submitted job. It carries the compiled SQL
+        because compilation already happened, synchronously, before the 202.
+      required: [job_id, state, compiled_sql]
+      properties:
+        job_id: { type: string, description: Opaque identifier, 128 bits of randomness. }
+        state: { $ref: "#/components/schemas/JobState" }
+        submitted_at: { type: string, format: date-time }
+        compiled_sql: { type: string }
+        columns:
+          type: array
+          items: { type: string }
+        namespace: { type: string }
+        model_version: { type: string }
+        dialect: { type: string }
+        parts:
+          type: integer
+          description: How many facts were aggregated separately and joined.
+
+    JobStatus:
+      type: object
+      description: |
+        The result of polling a job. Which fields are present depends on
+        `state`: rows only when `succeeded`, refusal fields only when `failed`.
+      required: [job_id, state]
+      properties:
+        job_id: { type: string }
+        state: { $ref: "#/components/schemas/JobState" }
+        submitted_at: { type: string, format: date-time }
+        finished_at:
+          type: string
+          format: date-time
+          description: Present once the job reached a terminal state.
+        elapsed_ms:
+          type: integer
+          description: Present while running.
+        duration_ms:
+          type: integer
+          description: Present once finished.
+        columns:
+          type: array
+          items: { type: string }
+        rows:
+          type: array
+          description: One page of rows. Present only when `state` is `succeeded`.
+          items:
+            type: array
+            items: {}
+        row_count:
+          type: integer
+          description: Rows in the whole result, not in this page.
+        next_cursor:
+          type: string
+          description: Present when more rows remain. Pass it back as `cursor`.
+        compiled_sql: { type: string }
+        namespace: { type: string }
+        model_version: { type: string }
+        dialect: { type: string }
+        code:
+          type: string
+          description: Present only when `state` is `failed`.
+        reason: { type: string }
+        hint: { type: string }
+        retry: { $ref: "#/components/schemas/Retry" }

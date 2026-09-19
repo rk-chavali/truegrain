@@ -1,0 +1,237 @@
+# Fixture model for the engine's own test suite.
+#
+# It is deliberately shaped around the join traps in docs/03-semantic-model.md:
+# orders has a one-to-many child (order_lines) and a many-to-one parent
+# (customers), so the same model exercises a safe join and a fan-out in one
+# place.
+#
+#   order_lines  --many-to-one-->  orders  --many-to-one-->  customers
+#
+# Walking right is safe. Walking left from orders into order_lines duplicates
+# order rows, and any SUM over orders taken across that join inflates.
+
+version: "0.2.0.dev0"
+
+semantic_model:
+  - name: retail
+    description: Orders, order lines and customers for engine tests.
+    ai_context:
+      instructions: >
+        A small retail model. Revenue lives on orders; quantities and per-item
+        detail live on order_lines. Region comes from the customer.
+
+    datasets:
+      - name: orders
+        source: main.orders
+        primary_key: [order_id]
+        description: One row per order.
+        fields:
+          - name: order_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: order_id
+            datatype: Integer
+            description: Order identifier.
+
+          - name: customer_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: customer_id
+            datatype: Integer
+            description: Foreign key to customers.
+
+          - name: order_date
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: order_date
+            datatype: Date
+            dimension:
+              is_time: true
+            description: Date the order was placed.
+
+          - name: status
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: status
+            datatype: String
+            dimension: {}
+            description: Order status, one of placed, shipped, delivered, cancelled.
+
+          - name: order_total
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: order_total
+            datatype: Decimal
+            description: Order value in dollars. Not a dimension.
+
+      - name: order_lines
+        source: main.order_lines
+        primary_key: [order_id, line_number]
+        description: One row per line of an order.
+        fields:
+          - name: order_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: order_id
+            datatype: Integer
+            description: Foreign key to orders.
+
+          - name: line_number
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: line_number
+            datatype: Integer
+            description: Position of this line within the order.
+
+          - name: item_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: item_id
+            datatype: String
+            dimension: {}
+            description: Item stock keeping unit.
+
+          - name: quantity
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: quantity
+            datatype: Integer
+            description: Units on this line.
+
+          - name: line_amount
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: line_amount
+            datatype: Decimal
+            description: Value of this line in dollars.
+
+      - name: customers
+        source: main.customers
+        primary_key: [customer_id]
+        description: One row per customer.
+        fields:
+          - name: customer_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: customer_id
+            datatype: Integer
+            description: Customer identifier.
+
+          - name: region
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: region
+            datatype: String
+            dimension: {}
+            description: Sales region the customer belongs to.
+            ai_context:
+              synonyms: ["territory", "sales region"]
+
+          - name: signup_date
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: signup_date
+            datatype: Date
+            dimension:
+              is_time: true
+            description: Date the customer account was created.
+
+          - name: email_domain
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: LOWER(SUBSTR(email, POSITION('@' IN email) + 1))
+            datatype: String
+            dimension: {}
+            description: Domain part of the customer email address.
+
+    relationships:
+      - name: orders_to_customers
+        from: orders
+        to: customers
+        from_columns: [customer_id]
+        to_columns: [customer_id]
+        ai_context:
+          instructions: Each order belongs to exactly one customer.
+
+      - name: lines_to_orders
+        from: order_lines
+        to: orders
+        from_columns: [order_id]
+        to_columns: [order_id]
+        ai_context:
+          instructions: Each line belongs to exactly one order.
+
+    metrics:
+      - name: order_revenue
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: SUM(orders.order_total)
+        datatype: Decimal
+        description: Total value of all orders, summed from the order header.
+        ai_context:
+          synonyms: ["revenue", "top line", "net sales"]
+
+      - name: order_count
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: COUNT(DISTINCT orders.order_id)
+        datatype: Integer
+        description: Number of distinct orders.
+
+      - name: largest_order
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: MAX(orders.order_total)
+        datatype: Decimal
+        description: Value of the single largest order.
+
+      - name: average_order_value
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: SUM(orders.order_total) / COUNT(DISTINCT orders.order_id)
+        datatype: Decimal
+        description: Order revenue divided by order count, computed after aggregation.
+        ai_context:
+          synonyms: ["AOV", "basket size"]
+
+      - name: line_revenue
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: SUM(order_lines.line_amount)
+        datatype: Decimal
+        description: Total value of all order lines, summed from the line detail.
+
+      - name: units_sold
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: SUM(order_lines.quantity)
+        datatype: Integer
+        description: Total units shipped across all order lines.
+
+      - name: shipped_revenue
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: SUM(CASE WHEN orders.status = 'shipped' THEN orders.order_total ELSE 0 END)
+        datatype: Decimal
+        description: Order revenue restricted to orders in the shipped state.

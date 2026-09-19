@@ -1,0 +1,25 @@
+{{/*
+The model, when it is not coming from a volume you defined.
+
+A ConfigMap is the convenient answer and not the production one: it caps at
+about a megabyte, and changing a metric means a helm upgrade rather than a
+merged pull request. Git stays the source of truth for a real deployment,
+which means model.volume with a git-sync sidecar or a PVC that CI writes.
+*/}}
+{{- if and (not .Values.model.volume) (not .Values.model.existingConfigMap) }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "truegrain.fullname" . }}-model
+  labels:
+    {{- include "truegrain.labels" . | nindent 4 }}
+data:
+  {{- if .Values.model.configMap }}
+  {{- range $name, $body := .Values.model.configMap }}
+  {{ $name }}: |
+    {{- $body | nindent 4 }}
+  {{- end }}
+  {{- else }}
+  {{- fail "No model is configured. Set one of model.configMap, model.existingConfigMap or model.volume: an engine with no model has nothing to serve and would fail its readiness probe forever." }}
+  {{- end }}
+{{- end }}

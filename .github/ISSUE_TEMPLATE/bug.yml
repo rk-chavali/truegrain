@@ -1,0 +1,21 @@
+name: Bug
+description: Something behaves differently from how it is documented
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what you expected instead
+    validations: { required: true }
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: The smallest model and command that shows it.
+    validations: { required: true }
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: "`semantic health` output, or the commit."
+    validations: { required: true }

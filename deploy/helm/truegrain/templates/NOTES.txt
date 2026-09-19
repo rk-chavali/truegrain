@@ -1,0 +1,55 @@
+truegrain {{ .Chart.AppVersion }} is installed as {{ include "truegrain.fullname" . }}.
+
+Reach it:
+
+  kubectl --namespace {{ .Release.Namespace }} port-forward svc/{{ include "truegrain.fullname" . }} {{ .Values.service.port }}:{{ .Values.service.port }}
+
+Then read what this deployment actually enforces, which is the first thing
+worth knowing and is reported by the engine rather than by this chart:
+
+  curl -s localhost:{{ .Values.service.port }}/v1/health
+
+{{ if eq .Values.auth.mode "none" }}
+WARNING: auth.mode is "none". Every caller is anonymous and the Service is
+reachable by anything that can route to it. That is fine for a trial in a
+private namespace and wrong for anything else. Set auth.mode to oidc, google
+or token before this carries a number anybody relies on.
+{{- end }}
+{{- if not .Values.governance.policyPath }}
+{{- if not .Values.governance.policyTags }}
+
+NOTE: no policy file is configured, so no column or row access control is
+applied and every caller can read every field. The engine says so in
+/v1/health rather than implying otherwise; set governance.policyPath, or
+governance.policyTags on BigQuery.
+{{- end }}
+{{- end }}
+{{- if not .Values.maxConcurrentQueries }}
+
+NOTE: maxConcurrentQueries is 0, so nothing bounds how many queries this
+deployment puts on the warehouse at once and one caller can saturate it.
+{{- end }}
+{{- if gt (int .Values.replicaCount) 1 }}
+
+NOTE: replicaCount is {{ .Values.replicaCount }}. Asynchronous jobs are held in
+memory per pod, so a caller that submits to /v1/jobs and polls may be routed
+to a pod that has never heard of its job. Synchronous queries and every
+metadata route are unaffected. Use session affinity if anything uses jobs.
+{{- end }}
+{{- if .Values.biProtocol.enabled }}
+
+The PostgreSQL wire protocol is serving on port {{ .Values.biProtocol.port }}, for BI tools:
+
+  kubectl --namespace {{ .Release.Namespace }} port-forward svc/{{ include "truegrain.fullname" . }}-bi {{ .Values.biProtocol.port }}:{{ .Values.biProtocol.port }}
+  psql "host=127.0.0.1 port={{ .Values.biProtocol.port }} dbname=truegrain"
+
+Point Metabase, Superset, Tableau or Power BI at that address. What they
+send is parsed into a semantic request and never forwarded to the warehouse
+as text, so the governance gate and the fan-out refusal still apply.
+{{- end }}
+
+The model is served from {{ .Values.model.mountPath }}{{ if and (not .Values.model.volume) (not .Values.model.existingConfigMap) }}, out of a ConfigMap this chart
+rendered. That is fine for trying it. For production keep git as the source
+of truth and set model.volume to a git-sync sidecar or a volume your CI
+writes, so a metric changes by merging a pull request rather than by a
+helm upgrade{{ end }}.

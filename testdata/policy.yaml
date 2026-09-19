@@ -1,0 +1,72 @@
+# Governance policy for the retail fixture model.
+#
+# This is the file-backed resolver. It proves compile-time enforcement on any
+# machine with no cloud account, which is what lets the guarantee in
+# docs/05-governance.md be tested on every pull request rather than only against
+# a real GCP project.
+#
+# It governs queries that go through this engine. It places no control on the
+# warehouse itself.
+
+version: 1
+
+tags:
+  - name: financial
+    description: Revenue figures. Restricted to the finance group.
+    fields:
+      - orders.order_total
+      - order_lines.line_amount
+
+  - name: pii
+    description: Personally identifying customer attributes.
+    fields:
+      - customers.email_domain
+
+grants:
+  # Grants go to groups and service accounts, never to individual humans:
+  # people change teams and per-human deprovisioning becomes unmanageable.
+  - principal: finance@example.com
+    tags: [financial]
+
+  - principal: privacy-cleared@example.com
+    tags: [pii]
+
+  - principal: sa-allowed@example.iam.gserviceaccount.com
+    tags: [financial, pii]
+
+  # The regional analysts below may read revenue; what differs between them
+  # is which rows, not which columns. Granting the tag here is what makes
+  # the row-policy tests test row policy rather than column access.
+  - principal: analyst@example.com
+    tags: [financial]
+  - principal: ne-only@example.com
+    tags: [financial]
+  - principal: mw-only@example.com
+    tags: [financial]
+
+  # sa-denied holds no tags. It is named here rather than omitted so the
+  # intent is visible in review: this identity is expected to be refused.
+  - principal: sa-denied@example.iam.gserviceaccount.com
+    tags: []
+
+# Row-level restrictions, so a test can assert what each caller sees.
+#
+# These are appended to a request before compilation, so a caller cannot
+# filter their way back out: the restriction is part of the statement
+# rather than something checked afterwards.
+rows:
+  - namespace: retail
+    principal: ne-only@example.com
+    description: A regional analyst who may only see the North East.
+    filter:
+      dimension: customers.region
+      op: eq
+      values: ["NE"]
+
+  - namespace: retail
+    principal: mw-only@example.com
+    description: The same, for the Midwest.
+    filter:
+      dimension: customers.region
+      op: eq
+      values: ["MW"]

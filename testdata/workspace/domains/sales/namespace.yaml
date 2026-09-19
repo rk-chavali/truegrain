@@ -1,0 +1,14 @@
+# The sales team owns orders, order lines and customers.
+#
+# Everything here is private unless it appears under `exports`. That is what
+# lets this team rename a field, change a join or restructure a dataset without
+# discovering later that another team was depending on it.
+version: 1
+name: sales
+owners: ["@acme/sales-ops"]
+description: Orders, order lines and the customers who placed them.
+
+exports:
+  # Marketing attributes revenue to campaigns, so it needs to join to orders.
+  # Nothing else in here is anyone else's business.
+  datasets: [orders]

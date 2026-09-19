@@ -1,0 +1,23 @@
+apiVersion: v2
+name: truegrain
+description: >-
+  A governed semantic layer that compiles Apache Ossie models into
+  dialect-correct SQL and refuses questions it cannot answer correctly.
+type: application
+
+# The chart's own version, bumped when the chart changes.
+version: 0.1.0
+
+# The engine version this chart was written against. Overridden by
+# image.tag in values.yaml.
+appVersion: "0.3.0"
+
+home: https://github.com/rk-chavali/truegrain
+sources:
+  - https://github.com/rk-chavali/truegrain
+keywords:
+  - semantic-layer
+  - analytics
+  - governance
+  - bigquery
+  - postgresql

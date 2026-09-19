@@ -1,0 +1,244 @@
+/*
+  The design system.
+
+  Direction: industrial readout on a blueprint ground. This is an
+  instrument panel for people who keep Superset, DBeaver and a warehouse
+  console open all day, so density is the courtesy and whitespace is the
+  cost. The previous pass got that backwards: a narrow column of prose
+  floating in grey, no numbers on screen, and the same padding on
+  everything, which reads as unfinished however carefully it is spaced.
+
+  Four decisions carry it.
+
+  1. Refused and denied are different colours because they are opposite
+     things. Denied is access: you may not read this. Refused is
+     correctness: this cannot be answered accurately, and something else
+     can. The engine never collapses them and neither does this.
+
+  2. Refused is amber, not red. A refusal is the product working. Red
+     teaches somebody that it broke; amber teaches them to read the
+     sentence and ask the better question.
+
+  3. The ground is blueprint, not paper. A cool ink-blue dark and a
+     faintly blue-cast light, because the thing being looked at is a
+     compiled plan. It is also deliberately not the warm off-white this
+     project reached for last time.
+
+  4. Figures are monospace and tabular, everywhere. Every number here is
+     in a column or being compared to one.
+*/
+
+@import "@fontsource/ibm-plex-sans/latin-400.css";
+@import "@fontsource/ibm-plex-sans/latin-500.css";
+@import "@fontsource/ibm-plex-sans/latin-600.css";
+@import "@fontsource/ibm-plex-mono/latin-400.css";
+@import "@fontsource/ibm-plex-mono/latin-500.css";
+
+:root {
+  /*
+    Type. A real pairing, self-hosted so the strict CSP (font-src 'self')
+    holds and an air-gapped install still renders.
+
+    IBM Plex was drawn for technical interfaces and its mono actually
+    matches its sans, which is the whole reason to pair them: a figure in
+    a table and a label beside it should look related.
+  */
+  --sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+
+  /* Blueprint ground, light. */
+  --bg: #eef1f5;
+  --surface: #ffffff;
+  --surface-2: #f6f8fa;
+  --surface-sunk: #e4e9ef;
+  --ink: #101a26;
+  --ink-2: #4a5b6d;
+  --ink-3: #5b6979;
+  --rule: #d5dde6;
+  --rule-2: #bcc8d5;
+
+  /* One dominant, carrying the page. */
+  --accent: #0b6b78;
+  --accent-hi: #0e8896;
+  --accent-wash: #e0eff1;
+  --accent-ink: #ffffff;
+
+  /* Semantic states. Load bearing, never decorative. */
+  --ok: #0b6b78;
+  --refused: #9a6100;
+  --refused-wash: #fdf2dd;
+  --refused-rule: #dcb367;
+  --denied: #6b4a8f;
+  --denied-wash: #f0ebf6;
+  --denied-rule: #b6a1d2;
+  --danger: #9e2f24;
+  --danger-wash: #fbe9e7;
+
+  /*
+    Type scale. Tight, because a dense tool needs small steps: the jump
+    from a column header to a page title is four notches, not two sizes.
+  */
+  --t-10: 0.6875rem;
+  --t-11: 0.75rem;
+  --t-12: 0.8125rem;
+  --t-13: 0.875rem;
+  --t-14: 0.9375rem;
+  --t-16: 1.0625rem;
+  --t-20: 1.25rem;
+  --t-28: 1.75rem;
+  --t-40: 2.5rem;
+
+  /* Space, 4px grid. */
+  --s1: 0.25rem;
+  --s2: 0.5rem;
+  --s3: 0.75rem;
+  --s4: 1rem;
+  --s5: 1.25rem;
+  --s6: 1.75rem;
+  --s7: 2.5rem;
+
+  /*
+    Structure. Low radius by role rather than one radius everywhere:
+    controls get 3px, surfaces get 4px, and nothing gets the soft
+    rounded-card treatment that flattens hierarchy into a template.
+  */
+  --r-control: 3px;
+  --r-surface: 4px;
+
+  --rail: 14rem;
+  --bar: 2.5rem;
+  --strip: 2.25rem;
+
+  --focus: 0 0 0 2px var(--surface), 0 0 0 4px var(--accent-hi);
+  --lift: 0 1px 2px rgba(16, 26, 38, 0.08);
+}
+
+/*
+  Dark. Not the same hues dimmed: amber at the light value is unreadable
+  on a dark ground, so each semantic colour is lifted rather than reused.
+  These tools get looked at for eight hours, often in a dim room, and
+  Superset and Cube both ship one.
+
+  Keyed off Mantine's attribute rather than the media query, so one
+  switch drives both systems. When they were independent, a toggle moved
+  Mantine's surfaces and left the blueprint palette on the light values.
+*/
+:root[data-mantine-color-scheme="dark"] {
+  --bg: #0c1218;
+  --surface: #141d26;
+  --surface-2: #19232e;
+  --surface-sunk: #0f171f;
+  --ink: #e3eaf2;
+  --ink-2: #9dadbd;
+  --ink-3: #7c8b9b;
+  --rule: #263340;
+  --rule-2: #37485a;
+
+  --accent: #3fb9c4;
+  --accent-hi: #5fd3dd;
+  --accent-wash: #103034;
+  --accent-ink: #042124;
+
+  --ok: #3fb9c4;
+  --refused: #e0ab5c;
+  --refused-wash: #2c2312;
+  --refused-rule: #5e4a1f;
+  --denied: #b79ae0;
+  --denied-wash: #221c30;
+  --denied-rule: #443861;
+  --danger: #ef8d82;
+  --danger-wash: #2f1b19;
+
+  --focus: 0 0 0 2px var(--surface), 0 0 0 4px var(--accent-hi);
+  --lift: 0 1px 2px rgba(0, 0, 0, 0.4);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: var(--t-12);
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  margin: 0;
+  font-weight: 600;
+  letter-spacing: -0.014em;
+  line-height: 1.2;
+}
+
+h1 {
+  font-size: var(--t-20);
+}
+h2 {
+  font-size: var(--t-16);
+}
+h3 {
+  font-size: var(--t-14);
+}
+h4 {
+  font-size: var(--t-12);
+}
+
+p {
+  margin: 0 0 var(--s3);
+  max-width: 68ch;
+}
+
+a {
+  color: var(--accent);
+  text-underline-offset: 2px;
+}
+
+/*
+  Mono is for figures and code, not for decoration. Tabular numerals so a
+  total does not shift by a pixel while it updates and a column of money
+  lines up on the decimal.
+*/
+code,
+pre,
+.mono,
+.num {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+
+:focus-visible {
+  outline: none;
+  box-shadow: var(--focus);
+  border-radius: var(--r-control);
+}
+
+::selection {
+  background: var(--accent-wash);
+  color: var(--ink);
+}
+
+/* Motion answers an action. There are no entrance animations here. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

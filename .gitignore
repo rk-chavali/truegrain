@@ -1,0 +1,54 @@
+bin/
+build/
+# `go build ./cmd/...` drops the binary in the working directory, which is how
+# a 39MB executable nearly ended up in a commit.
+*.exe
+*.duckdb
+*.duckdb.wal
+*.zip
+audit.jsonl
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
+dist/
+.venv/
+
+# Local editor and tooling state, and working notes.
+#
+# Notes stay untracked on purpose: a design sitting in the repository reads as
+# a commitment to ship it, and a snapshot of where things stood on a given day
+# rots faster than anything it describes.
+.claude/
+.remember/
+docs/superpowers/
+handoff/
+
+# The console's dependencies. Restored by `npm ci` from the committed
+# lock file, which is the artifact that actually pins them.
+node_modules/
+
+# TypeScript incremental build state.
+*.tsbuildinfo
+
+# The console's build output. Produced by `make console` and by the
+# Docker build, and embedded into the binary from there.
+#
+# Nothing here is committed except the empty marker, which exists only so
+# the go:embed directive has a directory to point at. The page a
+# binary shows when the console is not built is Go source, in
+# internal/console/embed.go, rather than a file at this path that every
+# `npm run build` would delete.
+internal/console/dist/*
+!internal/console/dist/.gitkeep
+
+# Playwright's own output. The baselines under
+# console/e2e/*-snapshots are committed on purpose: they are the
+# expectation. These two directories are what a run produces while
+# comparing against them.
+console/test-results/
+console/playwright-report/
+
+# Session state saved by e2e/auth.setup.ts. Cookies for a throwaway
+# account, but cookies all the same.
+console/e2e/.auth/

@@ -1,0 +1,123 @@
+{{/*
+The REST engine.
+
+Note on replicaCount. Synchronous queries, the wire protocol and every
+metadata route are stateless, so they scale freely. Asynchronous jobs are
+not: the job store is an in-memory map per pod, so a caller who submits a
+job and polls for it can be routed to a pod that has never heard of it and
+get a 404. `/v1/health` reports this rather than leaving it to be
+discovered. Raise the count freely if nothing uses /v1/jobs; otherwise use
+session affinity or leave it at one.
+*/}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "truegrain.fullname" . }}
+  labels:
+    {{- include "truegrain.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "truegrain.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: rest
+  template:
+    metadata:
+      labels:
+        {{- include "truegrain.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: rest
+      annotations:
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        {{- if and (not .Values.model.volume) (not .Values.model.existingConfigMap) }}
+        # Roll the pods when the model changes. Without this a `helm upgrade`
+        # that only edits the model updates the ConfigMap and leaves every
+        # pod serving the old one, which looks like the deploy silently did
+        # nothing.
+        checksum/model: {{ toYaml .Values.model.configMap | sha256sum }}
+        {{- end }}
+    spec:
+      {{- with .Values.image.pullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "truegrain.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: truegrain
+          image: {{ include "truegrain.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          args:
+            - serve
+            - rest
+            - -addr=0.0.0.0:{{ .Values.service.port }}
+            {{- include "truegrain.commonArgs" . | nindent 12 }}
+            {{- include "truegrain.authArgs" . | nindent 12 }}
+            {{- with .Values.auth.tokenScopes }}
+            - -token-scopes={{ join "," . }}
+            {{- end }}
+            {{- with .Values.audit.readers }}
+            - -audit-readers={{ join "," . }}
+            {{- end }}
+            {{- with .Values.corsOrigins }}
+            - -cors-origin={{ join "," . }}
+            {{- end }}
+            {{- with .Values.modelReloadInterval }}
+            - -reload={{ . }}
+            {{- end }}
+          env:
+            {{- include "truegrain.envFromSecrets" . | nindent 12 }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.port }}
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.probes.liveness.path }}
+              port: http
+            initialDelaySeconds: {{ .Values.probes.liveness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.liveness.periodSeconds }}
+            failureThreshold: {{ .Values.probes.liveness.failureThreshold }}
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.probes.readiness.path }}
+              port: http
+            initialDelaySeconds: {{ .Values.probes.readiness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.readiness.periodSeconds }}
+            failureThreshold: {{ .Values.probes.readiness.failureThreshold }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: model
+              mountPath: {{ .Values.model.mountPath }}
+              readOnly: true
+            {{- if .Values.audit.filePath }}
+            - name: audit
+              mountPath: {{ dir .Values.audit.filePath }}
+            {{- end }}
+      volumes:
+        {{- include "truegrain.modelVolume" . | nindent 8 }}
+        {{- if .Values.audit.filePath }}
+        # emptyDir, deliberately: an audit file on a pod's own disk is a
+        # buffer, not a record. Ship it with a log collector, or point
+        # audit.filePath at a real volume you define. The engine's
+        # in-memory window is what /v1/audit reads either way.
+        - name: audit
+          emptyDir: {}
+        {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

@@ -1,0 +1,21 @@
+name: Feature
+description: Something the engine should be able to do and cannot
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: The question you cannot ask
+      description: |
+        Describe it as a business question first, then as a request if you can.
+        If the engine refused, paste the refusal: its hint is often the answer.
+    validations: { required: true }
+  - type: textarea
+    id: refusal
+    attributes:
+      label: The refusal, if there was one
+      render: text
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What you are doing instead today

@@ -1,0 +1,106 @@
+# Release configuration.
+#
+# Binaries are static and built for the six targets people actually run, so
+# installing the engine is a download rather than a Go toolchain and a build.
+#
+# Everything published carries the commit it came from. A compiled SQL
+# statement whose provenance stops at "some version of the engine" is the gap
+# this project exists to close, and that applies to the engine itself.
+
+version: 2
+
+project_name: truegrain
+
+before:
+  hooks:
+    - go mod tidy
+    # A release is built from a tag, and a tag can point anywhere. The tests
+    # run here rather than trusting that CI passed on some earlier commit.
+    - go test ./... -count=1
+
+builds:
+  - id: truegrain
+    main: ./cmd/truegrain
+    binary: truegrain
+    env:
+      # Static, so the binary runs on any distribution and in a distroless
+      # container without a libc to match.
+      - CGO_ENABLED=0
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+    # -trimpath keeps build machine paths out of the binary, which is both a
+    # small information leak and the main obstacle to a reproducible build.
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+      - -X github.com/rk-chavali/truegrain/internal/version.version={{ .Version }}
+      - -X github.com/rk-chavali/truegrain/internal/version.commit={{ .FullCommit }}
+      - -X github.com/rk-chavali/truegrain/internal/version.date={{ .Date }}
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+archives:
+  - id: truegrain
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files:
+      - LICENSE
+      - README.md
+      - SECURITY.md
+      # The contract, shipped alongside the binary so an SDK author has it
+      # without cloning the repository.
+      - api/openapi.yaml
+
+checksum:
+  name_template: "checksums.txt"
+  algorithm: sha256
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  use: github
+  sort: asc
+  groups:
+    - title: Correctness
+      regexp: '(?i)^.*(refus|fan.?out|grain|governance|denial|audit).*'
+      order: 0
+    - title: Warehouses and interfaces
+      regexp: '(?i)^.*(bigquery|duckdb|dialect|rest|mcp|sdk|openapi).*'
+      order: 1
+    - title: Everything else
+      order: 99
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - Merge pull request
+
+release:
+  draft: false
+  prerelease: auto
+  footer: |
+    ## Install
+
+    ```bash
+    # macOS and Linux, from the archive above
+    tar xzf truegrain_{{ .Version }}_linux_amd64.tar.gz && ./truegrain version
+
+    # Container, against BigQuery
+    docker run --rm -v "$PWD:/models" ghcr.io/rk-chavali/truegrain:{{ .Version }} validate -models /models
+    ```
+
+    ## Clients
+
+    | Language | Install |
+    |---|---|
+    | Python | `pip install truegrain` |
+    | TypeScript | `npm install truegrain` |
+    | Go | `go get github.com/rk-chavali/truegrain-go` |
+
+    Every archive carries `api/openapi.yaml`, the contract those clients are
+    checked against. Verify a download with `checksums.txt`.

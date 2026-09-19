@@ -1,0 +1,11 @@
+-- The control plane's own database, created before the fixture loads.
+--
+-- A separate database on the same server, which is right for a demo and
+-- wrong for production. One holds who may sign in; the other holds
+-- somebody's business data and is frequently read-only to this process.
+-- Putting them in one place is how a semantic layer ends up needing write
+-- access to a production warehouse.
+--
+-- Runs first because docker-entrypoint-initdb.d executes in filename
+-- order, and the engine will not start until this exists.
+CREATE DATABASE truegrain_control;

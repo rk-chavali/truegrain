@@ -1,0 +1,323 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  engine:
+    name: Engine
+    runs-on: ubuntu-latest
+
+    # A real PostgreSQL, because the Postgres dialect emitted golden-tested SQL
+    # for a year and nothing ever ran it. The parity suite now executes the same
+    # fixture and the same metrics here as it does on DuckDB, so "dialect
+    # correct" is a measurement rather than a claim about the emitter.
+    #
+    # A service container rather than a skip: the step below fails the build on
+    # any skipped test, and a parity suite that quietly stops running is worse
+    # than one that was never written.
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: truegrain_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      # The password here is the service container's own, generated for this job
+      # and unreachable from outside it. Nothing real is protected by it.
+      TRUEGRAIN_TEST_POSTGRES_DSN: postgres://postgres:postgres@127.0.0.1:5432/truegrain_test?sslmode=disable
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install the PostgreSQL client
+        # psql loads the fixture. The server is in the container; only the
+        # client is needed on the runner.
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Formatting
+        run: |
+          unformatted=$(gofmt -l ./cmd ./internal)
+          if [ -n "$unformatted" ]; then
+            echo "not gofmt'd:"; echo "$unformatted"; exit 1
+          fi
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Build
+        run: go build ./...
+
+      # DuckDB is one self-contained executable, so the parity suite runs on
+      # every pull request rather than nightly. A correctness suite that only
+      # runs sometimes is a correctness suite nobody trusts.
+      - name: Install DuckDB
+        run: |
+          mkdir -p "$HOME/.local/bin"
+          curl -fsSL -o duckdb.zip \
+            https://github.com/duckdb/duckdb/releases/latest/download/duckdb_cli-linux-amd64.zip
+          unzip -o duckdb.zip -d "$HOME/.local/bin"
+          rm duckdb.zip
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Test
+        run: go test ./... -count=1
+
+      # The race detector, on the packages that actually run goroutines.
+      #
+      # Three of them do: the engine holds a semaphore bounding concurrent
+      # warehouse execution, the REST server runs every job in its own
+      # goroutine over a shared store, and the wire protocol serves one
+      # goroutine per connection. A data race in any of those is the class of
+      # bug that passes every test and then corrupts an answer under load,
+      # which for this project is the worst possible failure.
+      #
+      # Scoped rather than run over everything, because -race roughly
+      # tenfolds the runtime and the other packages are pure functions over
+      # a parsed model with no concurrency to detect.
+      - name: Race detector
+        run: go test -race -count=1 ./internal/engine/ ./internal/serve/rest/ ./internal/serve/pgwire/ ./internal/exec/
+
+      - name: No tests were skipped
+        run: |
+          skipped=$(go test ./... -count=1 -v 2>&1 | grep -c '^--- SKIP' || true)
+          if [ "$skipped" != "0" ]; then
+            echo "$skipped test(s) skipped; the parity suite must not be silently absent"
+            go test ./... -count=1 -v 2>&1 | grep -A2 '^--- SKIP'
+            exit 1
+          fi
+
+      # Golden SQL is committed. If regenerating it produces a diff, the
+      # compiled output of an unchanged model changed, which is the highest
+      # stakes change this project has and must never be accidental.
+      - name: Compiled SQL is unchanged
+        run: |
+          go test ./internal/dialect/ -update
+          go test ./internal/engine/ -update
+          if ! git diff --quiet -- testdata/golden; then
+            echo "compiled SQL changed for an unchanged model:"
+            git --no-pager diff -- testdata/golden
+            exit 1
+          fi
+
+  console:
+    name: Console
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: console
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: console/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      # Types first: a type error makes every gate below it noise.
+      - name: Types
+        run: npm run typecheck
+
+      # The rules worth having need types: a promise nobody awaited, an
+      # `any` from an API response spreading through a component. Both are
+      # bugs this console has already had.
+      - name: Lint
+        run: npm run lint
+
+      - name: Formatting
+        run: npm run format:check
+
+      # Unit tests, including the palette.
+      #
+      # Contrast is asserted against WCAG by reading tokens.css rather than
+      # by rendering, because axe only reaches the pixels some test happens
+      # to visit. Reading the palette checks all of it, which is how the
+      # failure that started this was found: --ink-3 failed on every surface
+      # in both themes and one screenshot test noticed one instance.
+      - name: Test
+        run: npm test
+
+      # The console is embedded in the binary with //go:embed, so a console
+      # that does not build is an engine that does not build.
+      - name: Build
+        run: npm run build
+
+  console-visual:
+    name: Console screenshots
+    runs-on: ubuntu-latest
+
+    # The same image the baselines were generated in, pinned to the
+    # Playwright version in package.json.
+    #
+    # This is not a convenience. Chromium rasterises text differently on
+    # every platform, so a baseline is only meaningful against the image
+    # it was taken in. `npm run test:visual:linux:update` regenerates
+    # them locally in this exact image; anything else produces a diff
+    # that means "two machines" rather than "the UI changed".
+    container: mcr.microsoft.com/playwright:v1.63.0-noble
+
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      # Reached by service name, because this job runs inside a container
+      # on the same network rather than on the runner host. The password
+      # is the service container's own and nothing real is behind it.
+      TRUEGRAIN_E2E_PG: postgres://postgres:postgres@postgres:5432
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install the PostgreSQL client
+        # e2e/server.mjs resets the control database and loads the
+        # warehouse fixture with it.
+        run: apt-get update -qq && apt-get install -y -qq postgresql-client
+
+      - name: Install
+        working-directory: console
+        run: npm ci
+
+      # A silent version drift here produces a wall of screenshot diffs
+      # that look like a UI change and are not. @playwright/test is
+      # pinned exactly for the same reason.
+      - name: The container matches the Playwright version
+        working-directory: console
+        run: |
+          installed=$(node -p "require('@playwright/test/package.json').version")
+          image=$(node -e "console.log(process.env.PLAYWRIGHT_IMAGE.match(/:v([0-9.]+)-/)[1])")
+          if [ "$installed" != "$image" ]; then
+            echo "container is $image but @playwright/test is $installed"
+            echo "update the container: tag in .github/workflows/ci.yml, then"
+            echo "regenerate the baselines with npm run test:visual:linux:update"
+            exit 1
+          fi
+        env:
+          PLAYWRIGHT_IMAGE: mcr.microsoft.com/playwright:v1.63.0-noble
+
+      # The harness builds the console and the Go binary itself, then
+      # serves the real thing. A screenshot of a mock proves the mock
+      # renders.
+      - name: Screenshots and accessibility
+        working-directory: console
+        run: npx playwright test
+
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: console/playwright-report
+          retention-days: 7
+
+  models:
+    name: Fixture models
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build
+        run: make build
+
+      # The published Apache Ossie example is vendored under testdata. If the
+      # engine stops reading a real upstream model, that is the signal that
+      # matters most to this project's positioning.
+      - name: Upstream Ossie example still parses
+        run: ./bin/truegrain validate -models testdata/ossie-examples/tpcds_semantic_model.yaml
+
+      - name: Fixture workspace validates
+        run: ./bin/truegrain validate -models testdata/workspace
+
+  compiled-results:
+    name: Does this change a number
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build
+        run: make build
+
+      # Reported rather than enforced in this repository: a change to the
+      # emitter is expected to move compiled SQL, and the committed golden files
+      # already gate that. The value here is the summary a reviewer reads.
+      #
+      # A model repository should drop -exit-zero, so a pull request that
+      # silently changes what a metric means fails instead.
+      #
+      # This runs the same three commands action.yml runs, against a binary
+      # built from the pull request rather than from a release. That is the
+      # only way the action's own shell gets exercised before it ships, and it
+      # means a change that breaks the JSON shape fails here rather than in
+      # somebody else's repository.
+      - name: Compare compiled output against the base branch
+        id: diff
+        run: |
+          set -euo pipefail
+          git worktree add /tmp/base "origin/${{ github.base_ref }}"
+          base=/tmp/base/testdata/workspace
+
+          ./bin/truegrain diff -models testdata/workspace -against "$base" \
+            -format json -full -exit-zero > /tmp/diff.json
+          ./bin/truegrain diff -models testdata/workspace -against "$base" \
+            -format markdown -full -exit-zero > /tmp/diff.md
+
+          jq -r '"changed=\(.changed)",
+                 "removed=\(.counts.removed)",
+                 "altered=\(.counts.altered)",
+                 "added=\(.counts.added)"' /tmp/diff.json >> "$GITHUB_OUTPUT"
+
+          cat /tmp/diff.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Validate the fixture workspace as a pipeline would
+        run: |
+          set -euo pipefail
+          ./bin/truegrain validate -models testdata/workspace -format json \
+            | jq -e '.ok and (.namespaces | length > 0)' > /dev/null
+          echo "validate emits the shape the action parses"

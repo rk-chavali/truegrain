@@ -1,0 +1,58 @@
+version: 1
+
+# Rollups for the retail fixture model.
+#
+# In a real deployment this file sits beside the model it describes. Here it
+# is in its own directory so that the tests which load the model without
+# rollups keep doing exactly that: a sidecar that appeared next to
+# retail.yaml would change what every other test in this repository is
+# measuring.
+
+rollups:
+  # Narrowest first is what the planner prefers, and this is the narrowest:
+  # two rows, one per region.
+  - name: orders_by_region
+    source: main.rollup_orders_by_region
+    dimensions:
+      - field: customers.region
+        column: region
+    metrics:
+      - metric: order_revenue
+        column: order_revenue
+      - metric: largest_order
+        column: largest_order
+    freshness:
+      column: built_at
+      max_age: 26h
+
+  - name: orders_by_region_month
+    source: main.rollup_orders_by_region_month
+    dimensions:
+      - field: customers.region
+        column: region
+      - field: orders.order_date
+        column: order_month
+        grain: month
+    metrics:
+      - metric: order_revenue
+        column: order_revenue
+      - metric: largest_order
+        column: largest_order
+    freshness:
+      column: built_at
+      max_age: 26h
+
+  # Built in 2020 and never since. Declared so that a test can prove a
+  # stale rollup is not read, which is the one property here that a
+  # deployment's correctness actually depends on.
+  - name: orders_stale
+    source: main.rollup_orders_stale
+    dimensions:
+      - field: orders.status
+        column: status
+    metrics:
+      - metric: order_revenue
+        column: order_revenue
+    freshness:
+      column: built_at
+      max_age: 26h

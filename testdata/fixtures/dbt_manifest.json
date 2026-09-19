@@ -1,0 +1,174 @@
+{
+  "metadata": {
+    "dbt_schema_version": "https://schemas.getdbt.com/dbt/manifest/v12.json",
+    "project_name": "jaffle_shop",
+    "adapter_type": "postgres"
+  },
+  "semantic_models": {
+    "semantic_model.jaffle_shop.orders": {
+      "name": "orders",
+      "description": "One row per order.",
+      "node_relation": {
+        "alias": "orders",
+        "schema_name": "analytics",
+        "database": "jaffle",
+        "relation_name": "\"jaffle\".\"analytics\".\"orders\""
+      },
+      "entities": [
+        { "name": "order", "type": "primary", "expr": "order_id" },
+        { "name": "customer", "type": "foreign", "expr": "customer_id" }
+      ],
+      "measures": [
+        { "name": "order_total", "agg": "sum", "expr": "amount", "description": "Order value." },
+        { "name": "order_count", "agg": "count", "expr": "order_id" },
+        {
+          "name": "balance_at_close",
+          "agg": "sum",
+          "expr": "balance",
+          "non_additive_dimension": { "name": "order_date" }
+        }
+      ],
+      "dimensions": [
+        { "name": "order_date", "type": "time", "description": "When it was placed." },
+        { "name": "status", "type": "categorical" },
+        { "name": "is_large", "type": "categorical", "expr": "amount > 100" }
+      ]
+    },
+    "semantic_model.jaffle_shop.order_lines": {
+      "name": "order_lines",
+      "description": "One row per line on an order.",
+      "node_relation": {
+        "alias": "order_lines",
+        "schema_name": "analytics",
+        "database": "jaffle",
+        "relation_name": "\"jaffle\".\"analytics\".\"order_lines\""
+      },
+      "entities": [
+        { "name": "order_line", "type": "primary", "expr": "line_id" },
+        { "name": "order", "type": "foreign", "expr": "order_id" }
+      ],
+      "measures": [
+        { "name": "line_total", "agg": "sum", "expr": "line_amount" },
+        { "name": "units", "agg": "sum", "expr": "quantity" }
+      ],
+      "dimensions": [
+        { "name": "sku", "type": "categorical" }
+      ]
+    },
+    "semantic_model.jaffle_shop.customers": {
+      "name": "customers",
+      "description": "One row per customer.",
+      "node_relation": {
+        "alias": "customers",
+        "schema_name": "analytics",
+        "database": "jaffle",
+        "relation_name": "\"jaffle\".\"analytics\".\"customers\""
+      },
+      "entities": [
+        { "name": "customer", "type": "primary", "expr": "customer_id" }
+      ],
+      "measures": [
+        { "name": "customer_count", "agg": "count_distinct", "expr": "customer_id" }
+      ],
+      "dimensions": [
+        { "name": "region", "type": "categorical" },
+        { "name": "signed_up_at", "type": "time" }
+      ]
+    },
+    "semantic_model.jaffle_shop.web_events": {
+      "name": "web_events",
+      "description": "Clickstream. Deliberately has no primary entity.",
+      "node_relation": {
+        "alias": "web_events",
+        "schema_name": "analytics",
+        "database": "jaffle",
+        "relation_name": "\"jaffle\".\"analytics\".\"web_events\""
+      },
+      "entities": [
+        { "name": "customer", "type": "foreign", "expr": "customer_id" },
+        { "name": "campaign", "type": "foreign", "expr": "campaign_id" }
+      ],
+      "measures": [
+        { "name": "event_count", "agg": "count", "expr": "event_id" }
+      ],
+      "dimensions": [
+        { "name": "event_type", "type": "categorical" }
+      ]
+    }
+  },
+  "metrics": {
+    "metric.jaffle_shop.revenue": {
+      "name": "revenue",
+      "description": "Total order value.",
+      "label": "Revenue",
+      "type": "simple",
+      "type_params": { "measure": { "name": "order_total" } }
+    },
+    "metric.jaffle_shop.line_revenue": {
+      "name": "line_revenue",
+      "description": "Order value at the line grain.",
+      "label": "Line revenue",
+      "type": "simple",
+      "type_params": { "measure": { "name": "line_total" } }
+    },
+    "metric.jaffle_shop.orders_placed": {
+      "name": "orders_placed",
+      "label": "Orders placed",
+      "type": "simple",
+      "type_params": { "measure": { "name": "order_count" } }
+    },
+    "metric.jaffle_shop.customers_seen": {
+      "name": "customers_seen",
+      "label": "Customers",
+      "type": "simple",
+      "type_params": { "measure": { "name": "customer_count" } }
+    },
+    "metric.jaffle_shop.average_order_value": {
+      "name": "average_order_value",
+      "description": "Revenue divided by orders.",
+      "type": "ratio",
+      "type_params": {
+        "numerator": { "name": "order_total" },
+        "denominator": { "name": "order_count" }
+      }
+    },
+    "metric.jaffle_shop.revenue_mtd": {
+      "name": "revenue_mtd",
+      "description": "Month to date, a window over an ordered frame.",
+      "type": "cumulative",
+      "type_params": { "measure": { "name": "order_total" } }
+    },
+    "metric.jaffle_shop.signup_to_order": {
+      "name": "signup_to_order",
+      "description": "A funnel.",
+      "type": "conversion",
+      "type_params": {}
+    },
+    "metric.jaffle_shop.revenue_per_customer": {
+      "name": "revenue_per_customer",
+      "description": "Composes two metrics that sit at different grains.",
+      "type": "derived",
+      "type_params": {}
+    },
+    "metric.jaffle_shop.shipped_revenue": {
+      "name": "shipped_revenue",
+      "description": "Revenue on shipped orders only.",
+      "type": "simple",
+      "type_params": {
+        "measure": { "name": "order_total", "filter": "{{ Dimension('order__status') }} = 'shipped'" }
+      }
+    },
+    "metric.jaffle_shop.closing_balance": {
+      "name": "closing_balance",
+      "description": "Sums over customer but not over time.",
+      "type": "simple",
+      "type_params": { "measure": { "name": "balance_at_close" } }
+    },
+    "metric.jaffle_shop.median_order": {
+      "name": "median_order",
+      "description": "A median, which no two warehouses spell alike.",
+      "type": "simple",
+      "type_params": { "measure": { "name": "order_median" } }
+    }
+  }
+}

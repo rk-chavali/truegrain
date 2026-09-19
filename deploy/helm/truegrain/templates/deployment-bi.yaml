@@ -1,0 +1,140 @@
+{{- if .Values.biProtocol.enabled }}
+{{/*
+The PostgreSQL wire protocol, for BI tools.
+
+A separate Deployment rather than a second port on the first one, for three
+reasons. It has a different threat model: the credential arrives in the
+password field of a startup exchange rather than in a header, so TLS matters
+differently. It has a different load shape: a dashboard opens long-lived
+connections and a REST caller does not, so they want different replica
+counts. And it can be turned off entirely, which most deployments should do
+until somebody actually points a BI tool at it.
+
+It is stateless. There are no jobs on this surface, so replicaCount here has
+none of the caveats the REST one carries.
+*/}}
+{{- if and (eq .Values.auth.mode "token") (not .Values.biProtocol.tls.existingSecret) }}
+{{- fail "biProtocol is enabled with auth.mode=token and no biProtocol.tls.existingSecret. The token is sent in the password field of the PostgreSQL startup exchange, so without TLS it is readable by anything on the network path. Provide a certificate, or terminate TLS in front of the Service." }}
+{{- end }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "truegrain.fullname" . }}-bi
+  labels:
+    {{- include "truegrain.labels" . | nindent 4 }}
+    app.kubernetes.io/component: bi
+spec:
+  replicas: {{ .Values.biProtocol.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "truegrain.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: bi
+  template:
+    metadata:
+      labels:
+        {{- include "truegrain.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: bi
+      annotations:
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        {{- if and (not .Values.model.volume) (not .Values.model.existingConfigMap) }}
+        checksum/model: {{ toYaml .Values.model.configMap | sha256sum }}
+        {{- end }}
+    spec:
+      {{- with .Values.image.pullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "truegrain.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: truegrain
+          image: {{ include "truegrain.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          args:
+            - serve
+            - postgres
+            - -addr=0.0.0.0:{{ .Values.biProtocol.port }}
+            {{- include "truegrain.commonArgs" . | nindent 12 }}
+            {{- if eq .Values.auth.mode "token" }}
+            - -token-env=TRUEGRAIN_TOKEN
+            {{- end }}
+            {{- if .Values.biProtocol.tls.existingSecret }}
+            - -tls-cert=/tls/tls.crt
+            - -tls-key=/tls/tls.key
+            {{- end }}
+          env:
+            {{- include "truegrain.envFromSecrets" . | nindent 12 }}
+          ports:
+            - name: pgwire
+              containerPort: {{ .Values.biProtocol.port }}
+              protocol: TCP
+          # A TCP probe rather than an HTTP one: this port speaks the
+          # PostgreSQL protocol, and /healthz does not exist on it. Accepting
+          # a connection is what liveness means here, and it touches no
+          # warehouse, which is the property that matters.
+          livenessProbe:
+            tcpSocket:
+              port: pgwire
+            initialDelaySeconds: {{ .Values.probes.liveness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.liveness.periodSeconds }}
+            failureThreshold: {{ .Values.probes.liveness.failureThreshold }}
+          readinessProbe:
+            tcpSocket:
+              port: pgwire
+            initialDelaySeconds: {{ .Values.probes.readiness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.readiness.periodSeconds }}
+            failureThreshold: {{ .Values.probes.readiness.failureThreshold }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: model
+              mountPath: {{ .Values.model.mountPath }}
+              readOnly: true
+            {{- if .Values.biProtocol.tls.existingSecret }}
+            - name: tls
+              mountPath: /tls
+              readOnly: true
+            {{- end }}
+      volumes:
+        {{- include "truegrain.modelVolume" . | nindent 8 }}
+        {{- if .Values.biProtocol.tls.existingSecret }}
+        - name: tls
+          secret:
+            secretName: {{ .Values.biProtocol.tls.existingSecret }}
+        {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "truegrain.fullname" . }}-bi
+  labels:
+    {{- include "truegrain.labels" . | nindent 4 }}
+    app.kubernetes.io/component: bi
+spec:
+  type: {{ .Values.service.type }}
+  ports:
+    - port: {{ .Values.biProtocol.port }}
+      targetPort: pgwire
+      protocol: TCP
+      name: pgwire
+  selector:
+    {{- include "truegrain.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: bi
+{{- end }}

@@ -1,0 +1,221 @@
+# The composite action, at the repository root so it can be used as
+# `rk-chavali/truegrain@v1` rather than a path nobody would guess.
+#
+# What it is for: a semantic model change that still validates, still passes
+# every test, and quietly moves a number on somebody's dashboard. Reviewing the
+# YAML does not catch it, because the YAML change is small and the consequence
+# is not. This runs the comparison that does.
+#
+# It installs a released binary rather than building from source, so a model
+# repository needs no Go toolchain and the version in the log is the version
+# that ran.
+
+name: truegrain
+description: Validate a semantic model, and report whether a pull request changes a number.
+author: Rama Krishna Chavali
+
+branding:
+  icon: layers
+  color: blue
+
+inputs:
+  models:
+    description: Workspace root, model directory, or a single Ossie file.
+    required: false
+    default: "."
+  version:
+    description: >
+      Release to install, for example v0.1.0. Defaults to the latest release.
+      Pin it if you would rather a new release never changed a check.
+    required: false
+    default: latest
+  dialect:
+    description: Target warehouse the model is compiled for.
+    required: false
+    default: duckdb
+  against:
+    description: >
+      Git ref to compare against, usually the base branch. Empty skips the
+      comparison and only validates.
+    required: false
+    default: ""
+  policy:
+    description: Governance policy file to validate alongside the model.
+    required: false
+    default: ""
+  comment:
+    description: >
+      Post the diff as a pull request comment, updating the same comment on
+      each push rather than adding a new one. Needs pull-requests write.
+    required: false
+    default: "true"
+  fail-on-change:
+    description: >
+      Fail the check when compiled output changes. Off by default: a changed
+      number is usually intended, and the point is that it is reviewed rather
+      than unnoticed. Turn it on for a model nobody should change casually.
+    required: false
+    default: "false"
+  full:
+    description: Include the SQL of every change in the comment.
+    required: false
+    default: "false"
+
+outputs:
+  changed:
+    description: "true when any compiled result differs from the base."
+    value: ${{ steps.diff.outputs.changed }}
+  removed:
+    description: Number of requests that no longer compile.
+    value: ${{ steps.diff.outputs.removed }}
+  altered:
+    description: Number of requests that compile differently.
+    value: ${{ steps.diff.outputs.altered }}
+  added:
+    description: Number of newly answerable requests.
+    value: ${{ steps.diff.outputs.added }}
+
+runs:
+  using: composite
+  steps:
+    - name: Install truegrain
+      shell: bash
+      env:
+        VERSION: ${{ inputs.version }}
+        # The token GitHub already mints for the job. The API rate limit for an
+        # unauthenticated runner is per IP and shared with every other job on
+        # that runner, so resolving a release fails intermittently without it.
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        set -euo pipefail
+
+        # jq and gh are preinstalled on GitHub-hosted runners. Saying so here
+        # turns a self-hosted runner's failure from "line 14: jq: not found"
+        # into something that names what to install.
+        for tool in jq gh tar sha256sum; do
+          command -v "$tool" >/dev/null || {
+            echo "::error::$tool is required and is not on PATH." \
+                 "GitHub-hosted runners have it; a self-hosted runner needs it installed."
+            exit 1
+          }
+        done
+
+        tag="$VERSION"
+        if [ "$tag" = "latest" ]; then
+          tag=$(gh api repos/rk-chavali/truegrain/releases/latest --jq .tag_name)
+        fi
+        echo "truegrain $tag"
+
+        case "$(uname -m)" in
+          x86_64)  arch=amd64 ;;
+          aarch64|arm64) arch=arm64 ;;
+          *) echo "unsupported architecture $(uname -m)" >&2; exit 1 ;;
+        esac
+
+        dir="$RUNNER_TEMP/truegrain"
+        mkdir -p "$dir"
+        asset="truegrain_${tag#v}_linux_${arch}.tar.gz"
+        gh release download "$tag" --repo rk-chavali/truegrain \
+          --pattern "$asset" --pattern checksums.txt --dir "$dir"
+
+        # Verifying rather than trusting the download. The checksums file is
+        # published by the same release and the binary is about to gate a
+        # review, so a silently corrupted or swapped artifact would be a review
+        # nobody can rely on.
+        ( cd "$dir" && grep " ${asset}\$" checksums.txt | sha256sum -c - )
+
+        tar -xzf "$dir/$asset" -C "$dir"
+        echo "$dir" >> "$GITHUB_PATH"
+
+    - name: Validate the model
+      shell: bash
+      env:
+        MODELS: ${{ inputs.models }}
+        DIALECT: ${{ inputs.dialect }}
+        POLICY: ${{ inputs.policy }}
+      run: |
+        set -euo pipefail
+        args=(validate -models "$MODELS" -dialect "$DIALECT" -format json)
+        [ -n "$POLICY" ] && args+=(-policy "$POLICY")
+
+        # Captured rather than streamed, so a failure can be both shown to a
+        # person and annotated onto the pull request.
+        if ! out=$(truegrain "${args[@]}" 2>&1); then
+          echo "$out"
+          # Each problem becomes an annotation, so a reviewer sees them on the
+          # files rather than having to open the log.
+          printf '%s' "$out" | jq -r '.errors[]? | "::error::" + .' || true
+          exit 1
+        fi
+        echo "$out"
+
+    - name: Check out the base for comparison
+      if: inputs.against != ''
+      shell: bash
+      env:
+        AGAINST: ${{ inputs.against }}
+      run: |
+        set -euo pipefail
+        # A worktree rather than a second clone: the objects are already here,
+        # and a shallow checkout would not have the base commit at all.
+        git fetch --no-tags --depth=1 origin "$AGAINST"
+        git worktree add "$RUNNER_TEMP/base" FETCH_HEAD
+
+    - name: Diff against the base
+      id: diff
+      if: inputs.against != ''
+      shell: bash
+      env:
+        MODELS: ${{ inputs.models }}
+        DIALECT: ${{ inputs.dialect }}
+        FULL: ${{ inputs.full }}
+        FAIL_ON_CHANGE: ${{ inputs.fail-on-change }}
+      run: |
+        set -euo pipefail
+        full=()
+        [ "$FULL" = "true" ] && full=(-full)
+
+        base="$RUNNER_TEMP/base/$MODELS"
+        truegrain diff -models "$MODELS" -dialect "$DIALECT" -against "$base" \
+          -format json -exit-zero "${full[@]}" > "$RUNNER_TEMP/diff.json"
+        truegrain diff -models "$MODELS" -dialect "$DIALECT" -against "$base" \
+          -format markdown -exit-zero "${full[@]}" > "$RUNNER_TEMP/diff.md"
+
+        jq -r '"changed=\(.changed)",
+               "removed=\(.counts.removed)",
+               "altered=\(.counts.altered)",
+               "added=\(.counts.added)"' \
+          "$RUNNER_TEMP/diff.json" >> "$GITHUB_OUTPUT"
+
+        # The summary is where a reviewer looks when there is no comment,
+        # either because this is a push rather than a pull request or because
+        # commenting is off.
+        cat "$RUNNER_TEMP/diff.md" >> "$GITHUB_STEP_SUMMARY"
+
+        if [ "$FAIL_ON_CHANGE" = "true" ] && [ "$(jq -r .changed "$RUNNER_TEMP/diff.json")" = "true" ]; then
+          echo "::error::compiled output changed and fail-on-change is set"
+          exit 1
+        fi
+
+    - name: Comment on the pull request
+      if: inputs.against != '' && inputs.comment == 'true' && github.event_name == 'pull_request'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+        PR: ${{ github.event.pull_request.number }}
+        REPO: ${{ github.repository }}
+      run: |
+        set -euo pipefail
+        # A marker so each push edits the same comment. Without it a busy pull
+        # request collects one comment per push and people stop reading them.
+        marker="<!-- truegrain-diff -->"
+        body="$marker"$'\n'"$(cat "$RUNNER_TEMP/diff.md")"
+
+        existing=$(gh api "repos/$REPO/issues/$PR/comments" \
+          --jq "[.[] | select(.body | startswith(\"$marker\"))] | .[0].id // empty")
+
+        if [ -n "$existing" ]; then
+          gh api -X PATCH "repos/$REPO/issues/comments/$existing" -f body="$body" >/dev/null
+        else
+          gh api -X POST "repos/$REPO/issues/$PR/comments" -f body="$body" >/dev/null
+        fi

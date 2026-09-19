@@ -1,0 +1,13 @@
+# The marketing team owns campaigns, and attributes revenue by joining to the
+# orders dataset that sales exports.
+#
+# Both sides opt in: sales lists `orders` under exports, marketing lists it
+# under imports. Either team can see the whole dependency by reading one file.
+version: 1
+name: marketing
+owners: ["@acme/growth"]
+description: Campaign spend and the revenue attributed to it.
+
+imports:
+  - namespace: sales
+    datasets: [orders]

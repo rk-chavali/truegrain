@@ -1,0 +1,42 @@
+{{- if .Values.ingress.enabled }}
+{{/*
+Nothing here terminates TLS for you, and the engine speaks plain HTTP by
+design. If ingress.tls is empty this is publishing an unencrypted endpoint
+that carries bearer tokens, so the chart refuses rather than letting it go
+out quietly. See docs/09-deploying.md.
+*/}}
+{{- if not .Values.ingress.tls }}
+{{- fail "ingress.enabled is true with no ingress.tls. The engine speaks plain HTTP and callers send bearer tokens, so an ingress without TLS puts credentials on the wire. Configure ingress.tls, or terminate TLS in front of the ingress and set ingress.tls to acknowledge it." }}
+{{- end }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "truegrain.fullname" . }}
+  labels:
+    {{- include "truegrain.labels" . | nindent 4 }}
+  {{- with .Values.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- with .Values.ingress.className }}
+  ingressClassName: {{ . }}
+  {{- end }}
+  tls:
+    {{- toYaml .Values.ingress.tls | nindent 4 }}
+  rules:
+    {{- range .Values.ingress.hosts }}
+    - host: {{ .host | quote }}
+      http:
+        paths:
+          {{- range .paths }}
+          - path: {{ .path }}
+            pathType: {{ default "Prefix" .pathType }}
+            backend:
+              service:
+                name: {{ include "truegrain.fullname" $ }}
+                port:
+                  number: {{ $.Values.service.port }}
+          {{- end }}
+    {{- end }}
+{{- end }}

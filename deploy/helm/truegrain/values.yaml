@@ -1,0 +1,205 @@
+# Defaults for the truegrain chart.
+#
+# Two rules run through this file and are worth reading before changing
+# anything.
+#
+# No credential goes here. Every secret is referenced by the name of a Secret
+# you created, never given as a value: a `helm install --set password=...`
+# lands in shell history, and a value committed to a values file lands in
+# git. The chart will not start a deployment that puts one in an environment
+# variable literal.
+#
+# Nothing is on by default that overstates what is enforced. Authentication,
+# the policy file and the concurrency cap are all off unless configured, and
+# the engine's own `health` output says so at runtime. A chart that quietly
+# defaulted to "looks secure" would be the opposite of what this project is.
+
+image:
+  repository: ghcr.io/rk-chavali/truegrain
+  # Pinned rather than `latest`, so a pod restarting six months from now
+  # runs what you deployed rather than whatever has been pushed since.
+  tag: ""          # defaults to .Chart.AppVersion
+  pullPolicy: IfNotPresent
+  pullSecrets: []
+
+# How many engines. Read the note in the deployment template before raising
+# this: asynchronous jobs are held in memory per pod, so a caller that
+# submits a job and polls it can be routed to a pod that has never heard of
+# it. Synchronous queries, the wire protocol and every metadata route are
+# stateless and scale freely.
+replicaCount: 1
+
+# The model.
+#
+# Three ways in, and only one of them is right for production.
+#
+#   configMap  a model rendered into a ConfigMap by this chart. Fine for
+#              trying it and for a small model; a ConfigMap caps at about a
+#              megabyte and redeploying is how you change it.
+#   existingConfigMap  a ConfigMap you manage, perhaps written by CI.
+#   volume     any volume you define, which is where a git-sync sidecar or a
+#              read-only PVC goes. This is the production answer, because git
+#              stays the source of truth.
+model:
+  mountPath: /models
+  # Inline model files, keyed by filename. Empty means one of the two below
+  # must be set.
+  configMap: {}
+  existingConfigMap: ""
+  # A raw volume spec, used verbatim. Takes precedence over both of the above.
+  volume: {}
+
+warehouse:
+  # bigquery, postgres, duckdb or snowflake. Compiling works for all four;
+  # execution needs one of the first three.
+  dialect: bigquery
+
+  bigquery:
+    project: ""
+    location: ""
+    # Refuse a query the warehouse estimates will scan more than this. Worth
+    # setting: without it one bad question is one large bill.
+    maxBytesBilled: 0
+    # Run each query as the calling identity rather than as this pod's
+    # service account, so BigQuery's own row and column security applies to
+    # the caller.
+    impersonate: false
+
+  postgres:
+    # The name of a Secret holding the connection string, and the key in it.
+    # The engine reads the variable this is projected into; the DSN never
+    # appears in a command line or a manifest.
+    existingSecret: ""
+    secretKey: dsn
+
+# Cap simultaneous warehouse queries. Zero does not cap.
+#
+# Set this. The bare binary defaults to uncapped because the right number is
+# a property of the warehouse rather than of the engine, but a deployment
+# knows its warehouse, and uncapped means one caller can saturate it.
+maxConcurrentQueries: 16
+
+auth:
+  # oidc, google, token or none.
+  mode: none
+
+  oidc:
+    issuer: ""
+    # Mandatory with an issuer. Without an audience every token that issuer
+    # ever minted, for any service, is accepted here.
+    audience: ""
+    subjectClaim: ""
+    groupsClaim: ""
+
+  google:
+    audience: ""
+
+  # A shared bearer token, from a Secret you created.
+  token:
+    existingSecret: ""
+    secretKey: token
+
+  # Scopes the shared token may use: read:model, run:query. Empty grants all.
+  tokenScopes: []
+
+governance:
+  # Path to a policy file, relative to the model mount. Without one nothing
+  # is enforced and `health` says so.
+  policyPath: ""
+  # Resolve column access from BigQuery policy tags instead of a policy file.
+  policyTags: false
+
+audit:
+  # Identities allowed to read /v1/audit. Empty does not serve it at all,
+  # because the record carries every caller's activity.
+  readers: []
+  # Append every decision as JSON lines. A path on a mounted volume, or
+  # empty to keep only the in-memory window.
+  filePath: ""
+
+# The PostgreSQL wire protocol, for BI tools. A second Deployment, because it
+# is a different port with a different threat model and you may well want a
+# different number of them.
+biProtocol:
+  enabled: false
+  replicaCount: 1
+  port: 5439
+  # TLS is not optional when a token is configured, and the engine refuses
+  # that combination rather than putting a credential on a plaintext socket.
+  # Terminate TLS here or in front of it; see docs/09-deploying.md.
+  tls:
+    existingSecret: ""
+
+service:
+  type: ClusterIP
+  port: 8080
+  annotations: {}
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts: []
+  tls: []
+
+# Liveness and readiness are separate endpoints and neither touches the
+# warehouse. Do not repoint either at /v1/health: that one reports on the
+# warehouse, so a warehouse outage would restart every pod, and a restart
+# cannot fix a warehouse.
+probes:
+  liveness:
+    path: /healthz
+    initialDelaySeconds: 3
+    periodSeconds: 10
+    failureThreshold: 3
+  readiness:
+    path: /readyz
+    initialDelaySeconds: 2
+    periodSeconds: 5
+    failureThreshold: 3
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    memory: 512Mi
+
+# The engine needs no filesystem write, no root and no capabilities. These
+# defaults are the whole set a semantic layer holding warehouse credentials
+# should run with, and loosening any of them should need a reason.
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: ["ALL"]
+  seccompProfile:
+    type: RuntimeDefault
+
+podSecurityContext:
+  fsGroup: 65532
+
+serviceAccount:
+  create: true
+  name: ""
+  # On GKE this is where the Workload Identity annotation goes, which is how
+  # the pod reaches BigQuery without a key file.
+  annotations: {}
+
+# Reload the model this often without restarting. A model that will not load
+# is reported and the previous one keeps answering.
+modelReloadInterval: ""
+
+telemetry:
+  otlpEndpoint: ""
+  traceSampleRatio: 0.0
+
+# Allowed browser origins for the console, which is served separately.
+corsOrigins: []
+
+podAnnotations: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}

@@ -1,0 +1,1250 @@
+/*
+  Components, grouped by what they are for.
+
+  Two rules run through all of it.
+
+  Density is the courtesy. A person who keeps this open all day wants
+  more on screen, not more air around less. Where the previous pass put
+  a paragraph, this puts a readout.
+
+  Width is a tool. A table wants the full viewport; a form wants 32rem.
+  One max-width applied to every screen is what made the old console read
+  as a narrow column floating in grey.
+*/
+
+/* ---------- Shell ---------- */
+
+.shell {
+  display: grid;
+  grid-template-columns: var(--rail) minmax(0, 1fr);
+  height: 100%;
+}
+
+.rail {
+  background: var(--surface-2);
+  border-right: 1px solid var(--rule);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.rail-mark {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  height: var(--bar);
+  padding: 0 var(--s3);
+  border-bottom: 1px solid var(--rule);
+  font-weight: 600;
+  font-size: var(--t-13);
+  letter-spacing: -0.02em;
+}
+
+/* Three strata thinning downwards: a grain, and the granularity a
+   number is true at. */
+.grain {
+  display: block;
+  flex: none;
+}
+
+.rail-nav {
+  padding: var(--s2) var(--s2) var(--s4);
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.rail-group {
+  margin: var(--s4) 0 var(--s1);
+  padding: 0 var(--s2);
+  font-size: var(--t-10);
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.rail-nav > .rail-group:first-child {
+  margin-top: var(--s1);
+}
+
+.rail-link {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  padding: var(--s2) var(--s2);
+  border-radius: var(--r-control);
+  color: var(--ink-2);
+  text-decoration: none;
+  font-size: var(--t-12);
+  border: 1px solid transparent;
+}
+.rail-link:hover {
+  background: var(--surface);
+  color: var(--ink);
+}
+.rail-link[aria-current="page"] {
+  background: var(--accent-wash);
+  border-color: var(--accent);
+  color: var(--ink);
+  font-weight: 500;
+}
+.rail-link svg {
+  flex: none;
+  opacity: 0.75;
+}
+.rail-link[aria-current="page"] svg {
+  opacity: 1;
+  color: var(--accent);
+}
+.rail-count {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: var(--t-10);
+  color: var(--ink-3);
+}
+
+.rail-foot {
+  border-top: 1px solid var(--rule);
+  padding: var(--s2) var(--s3);
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  min-width: 0;
+}
+
+.avatar {
+  width: 22px;
+  height: 22px;
+  border-radius: 2px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  display: grid;
+  place-items: center;
+  font-size: var(--t-10);
+  font-weight: 600;
+  flex: none;
+}
+
+.main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* The top bar carries the workspace and the model version, never a
+   repeat of the page title that is already an h1 six pixels below it. */
+.bar {
+  height: var(--bar);
+  border-bottom: 1px solid var(--rule);
+  background: var(--surface);
+  display: flex;
+  align-items: center;
+  gap: var(--s4);
+  padding: 0 var(--s4);
+  flex: none;
+}
+
+/* A fact whose value is chosen rather than read. */
+.fact-control {
+  cursor: pointer;
+}
+.fact-control .mantine-Select-input {
+  font-family: var(--mono);
+  font-size: var(--t-11);
+  font-weight: 500;
+  color: var(--ink);
+  min-height: 0;
+  height: auto;
+  line-height: 1.3;
+}
+
+.bar-facts {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--s4);
+  font-size: var(--t-11);
+  color: var(--ink-2);
+  min-width: 0;
+}
+
+.fact {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s2);
+  white-space: nowrap;
+}
+.fact > span {
+  color: var(--ink-3);
+}
+.fact > b {
+  font-weight: 500;
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: var(--t-11);
+}
+
+/* ---------- Page and the spec strip ---------- */
+
+/* The scroll container is the shell's main, not each page. */
+.canvas {
+  overflow: auto;
+  flex: 1;
+  min-height: 0;
+}
+/* Inset, because an outer ring on a full-height scroller is clipped. */
+.canvas:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--accent-hi);
+  border-radius: 0;
+}
+.page {
+  flex: 1;
+  min-height: 0;
+}
+.page-pad {
+  padding: var(--s5) var(--s5) var(--s7);
+}
+
+/* Width by role, not one width for everything. */
+.w-form {
+  max-width: 32rem;
+}
+.w-read {
+  max-width: 52rem;
+}
+.w-full {
+  max-width: none;
+}
+
+.page-head {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s4);
+  margin-bottom: var(--s4);
+}
+.page-head h1 {
+  font-size: var(--t-20);
+}
+.page-head .page-actions {
+  margin-left: auto;
+  display: flex;
+  gap: var(--s2);
+  flex: none;
+}
+
+/*
+  The spec strip: the signature of this design.
+
+  A row of label and value pairs under the title, values in mono, split
+  by hairlines. It replaces the explanatory paragraph every screen used
+  to open with, and it is where the numbers live, which is the thing a
+  data tool should never be without.
+*/
+.strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-surface);
+  background: var(--surface);
+  margin-bottom: var(--s5);
+  overflow: hidden;
+}
+
+.strip-cell {
+  padding: var(--s2) var(--s4);
+  border-right: 1px solid var(--rule);
+  min-width: 8rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  justify-content: center;
+}
+.strip-cell:last-child {
+  border-right: none;
+}
+.strip-k {
+  font-size: var(--t-10);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  white-space: nowrap;
+}
+.strip-v {
+  font-family: var(--mono);
+  font-size: var(--t-13);
+  font-weight: 500;
+  color: var(--ink);
+  line-height: 1.3;
+}
+.strip-v.is-ok {
+  color: var(--ok);
+}
+.strip-v.is-refused {
+  color: var(--refused);
+}
+.strip-v.is-denied {
+  color: var(--denied);
+}
+.strip-v.is-off {
+  color: var(--ink-3);
+}
+/* Pushes the remainder right, so a strip can carry a status at its end. */
+.strip-gap {
+  flex: 1;
+  border-right: 1px solid var(--rule);
+}
+
+/* An optional one-line note under a heading. One line, never three. */
+.lede {
+  color: var(--ink-2);
+  font-size: var(--t-12);
+  margin: calc(var(--s1) * -1) 0 var(--s4);
+  max-width: 68ch;
+}
+
+/* ---------- Controls ---------- */
+
+.btn {
+  font: inherit;
+  font-size: var(--t-12);
+  font-weight: 500;
+  padding: var(--s2) var(--s3);
+  border-radius: var(--r-control);
+  border: 1px solid var(--rule-2);
+  background: var(--surface);
+  color: var(--ink);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+  white-space: nowrap;
+  transition:
+    background-color 80ms linear,
+    border-color 80ms linear;
+}
+.btn:hover:not(:disabled) {
+  background: var(--surface-sunk);
+  border-color: var(--ink-3);
+}
+.btn:active:not(:disabled) {
+  background: var(--rule);
+}
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.btn-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+.btn-primary:hover:not(:disabled) {
+  background: var(--accent-hi);
+  border-color: var(--accent-hi);
+}
+.btn-primary:active:not(:disabled) {
+  background: var(--accent);
+}
+
+.btn-quiet {
+  border-color: transparent;
+  background: transparent;
+  color: var(--ink-2);
+}
+.btn-quiet:hover:not(:disabled) {
+  background: var(--surface-sunk);
+  border-color: transparent;
+  color: var(--ink);
+}
+
+.btn-danger {
+  color: var(--danger);
+  border-color: transparent;
+  background: transparent;
+}
+.btn-danger:hover:not(:disabled) {
+  background: var(--danger-wash);
+  border-color: transparent;
+}
+
+.btn-sm {
+  padding: 2px var(--s2);
+  font-size: var(--t-11);
+}
+
+/* A segmented control, for lenses and view switches. */
+.seg {
+  display: inline-flex;
+  border: 1px solid var(--rule-2);
+  border-radius: var(--r-control);
+  overflow: hidden;
+  background: var(--surface);
+}
+.seg > button {
+  font: inherit;
+  font-size: var(--t-11);
+  font-weight: 500;
+  padding: var(--s2) var(--s3);
+  border: none;
+  border-right: 1px solid var(--rule);
+  background: transparent;
+  color: var(--ink-2);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+}
+.seg > button:last-child {
+  border-right: none;
+}
+.seg > button:hover {
+  background: var(--surface-sunk);
+  color: var(--ink);
+}
+.seg > button[aria-pressed="true"] {
+  background: var(--accent-wash);
+  color: var(--ink);
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+.field {
+  display: block;
+  margin-bottom: var(--s3);
+}
+.field > span {
+  display: block;
+  margin-bottom: 3px;
+  font-size: var(--t-11);
+  font-weight: 500;
+  color: var(--ink-2);
+}
+.field-hint {
+  margin-top: 3px;
+  font-size: var(--t-11);
+  color: var(--ink-3);
+}
+
+/*
+  Inputs are Mantine's now.
+
+  There used to be a global rule here matching every text-like input and
+  setting its own padding, and it silently beat Mantine's: the padding a
+  TextInput reserves for its left icon was overwritten, so the search
+  icon sat on top of the placeholder. Two systems styling the same
+  element is a fight one of them loses somewhere nobody is looking.
+
+  The rule that replaces it: screens use Mantine inputs, never a raw
+  element. This is the convention Metabase and Superset both enforce and
+  the reason their UIs stay coherent across hundreds of files.
+*/
+
+.field {
+  display: block;
+  margin-bottom: var(--s3);
+}
+.field > span {
+  display: block;
+  margin-bottom: 3px;
+  font-size: var(--t-11);
+  font-weight: 500;
+  color: var(--ink-2);
+}
+.field-hint {
+  margin-top: 3px;
+  font-size: var(--t-11);
+  color: var(--ink-3);
+}
+
+.input-mono input,
+.input-mono textarea {
+  font-family: var(--mono);
+}
+
+/* ---------- Surfaces ---------- */
+
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: var(--r-surface);
+}
+.panel + .panel {
+  margin-top: var(--s4);
+}
+.panel-head {
+  padding: var(--s2) var(--s4);
+  border-bottom: 1px solid var(--rule);
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  font-size: var(--t-12);
+  font-weight: 600;
+  min-height: var(--strip);
+}
+.panel-head .spacer {
+  margin-left: auto;
+}
+.panel-body {
+  padding: var(--s4);
+}
+.panel-tight > .panel-body {
+  padding: 0;
+}
+
+.section-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s3);
+  margin: var(--s6) 0 var(--s3);
+}
+.section-head h2 {
+  font-size: var(--t-14);
+}
+.section-head .spacer {
+  margin-left: auto;
+}
+
+/* ---------- Tables ---------- */
+
+/*
+  Built on Mantine's Table, restyled to the conventions the
+  enterprise-table literature agrees on: numbers right-aligned in a
+  monospace face so digits line up, a sticky header, a visible sort
+  indicator, a hover affordance that says a row is actionable, and a
+  density the person chooses and keeps.
+*/
+.grid {
+  --table-border-color: var(--rule);
+  font-size: var(--t-12);
+  width: 100%;
+}
+
+.grid thead th {
+  text-align: left;
+  font-weight: 500;
+  font-size: var(--t-10);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--rule-2);
+  white-space: nowrap;
+}
+.grid th.sortable {
+  cursor: pointer;
+  user-select: none;
+}
+.grid th.sortable:hover {
+  color: var(--ink);
+}
+.grid th[aria-sort="ascending"],
+.grid th[aria-sort="descending"] {
+  color: var(--ink);
+}
+.sort-mark {
+  display: inline-block;
+  width: 1em;
+  margin-left: 2px;
+  font-size: 0.9em;
+}
+
+.grid td {
+  vertical-align: top;
+  border-bottom: 1px solid var(--rule);
+}
+.grid tbody tr:last-child td {
+  border-bottom: none;
+}
+
+/* A number belongs on the right, against the digits above it. */
+.grid td.num,
+.grid th.num {
+  text-align: right;
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+.grid .shrink {
+  width: 1%;
+  white-space: nowrap;
+}
+
+/*
+  Three densities, the same three every reference tool offers. The
+  numbers are theirs: condensed for scanning a long result, relaxed for
+  a screen somebody reads rather than scans.
+*/
+.grid.density-condensed td,
+.grid.density-condensed th {
+  padding-top: 2px;
+  padding-bottom: 2px;
+}
+.grid.density-regular td,
+.grid.density-regular th {
+  padding-top: var(--s2);
+  padding-bottom: var(--s2);
+}
+.grid.density-relaxed td,
+.grid.density-relaxed th {
+  padding-top: var(--s3);
+  padding-bottom: var(--s3);
+}
+
+/* The row count and the density control, under every table. */
+.table-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s3);
+  padding: var(--s1) var(--s3);
+  border-top: 1px solid var(--rule);
+  background: var(--surface-2);
+}
+
+/* ---------- Semantic state ---------- */
+
+/*
+  The verdict block: where this interface raises its voice.
+
+  A refusal gets the room a result gets. Not a left-border stripe, which
+  is the most reliable AI design tell there is; the whole surface is
+  tinted and the state is named in a header bar, so the colour is
+  carrying meaning rather than decorating an edge.
+*/
+.verdict {
+  border: 1px solid var(--rule-2);
+  border-radius: var(--r-surface);
+  background: var(--surface);
+  overflow: hidden;
+}
+.verdict-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  padding: var(--s2) var(--s4);
+  border-bottom: 1px solid var(--rule-2);
+  font-size: var(--t-11);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.verdict-bar .code {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: var(--t-10);
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+  /*
+    No opacity here. Dimming --refused against its own wash drops this
+    from 4.63:1 to 2.99:1, and this string names the refusal, which is
+    the single most useful word on the screen. Size, weight and case
+    already separate it from the label beside it.
+  */
+}
+.verdict-body {
+  padding: var(--s4);
+}
+.verdict-body h3 {
+  margin-bottom: var(--s2);
+}
+.verdict-body p {
+  margin-bottom: var(--s3);
+  color: var(--ink-2);
+}
+.verdict-body p:last-child {
+  margin-bottom: 0;
+}
+
+.verdict-refused {
+  border-color: var(--refused-rule);
+  background: var(--refused-wash);
+}
+.verdict-refused .verdict-bar {
+  border-color: var(--refused-rule);
+  color: var(--refused);
+}
+.verdict-denied {
+  border-color: var(--denied-rule);
+  background: var(--denied-wash);
+}
+.verdict-denied .verdict-bar {
+  border-color: var(--denied-rule);
+  color: var(--denied);
+}
+.verdict-error .verdict-bar {
+  color: var(--danger);
+}
+
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 5px;
+  border-radius: 2px;
+  font-size: var(--t-10);
+  font-weight: 500;
+  border: 1px solid var(--rule-2);
+  background: var(--surface-2);
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+.tag-ok {
+  background: var(--accent-wash);
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.tag-refused {
+  background: var(--refused-wash);
+  color: var(--refused);
+  border-color: var(--refused-rule);
+}
+.tag-denied {
+  background: var(--denied-wash);
+  color: var(--denied);
+  border-color: var(--denied-rule);
+}
+.tag-danger {
+  background: var(--danger-wash);
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+.dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex: none;
+  background: var(--ink-3);
+}
+.dot-ok {
+  background: var(--ok);
+}
+.dot-refused {
+  background: var(--refused);
+}
+.dot-danger {
+  background: var(--danger);
+}
+
+/* A single answered number. */
+.figure {
+  font-family: var(--mono);
+  font-size: var(--t-40);
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+  line-height: 1.05;
+}
+.figure-label {
+  font-size: var(--t-11);
+  color: var(--ink-3);
+  margin-top: var(--s1);
+}
+
+/* ---------- Explore ---------- */
+
+.explore {
+  display: grid;
+  grid-template-columns: 16rem minmax(0, 1fr);
+  height: 100%;
+  min-height: 0;
+}
+
+.builder {
+  border-right: 1px solid var(--rule);
+  background: var(--surface);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.builder-scroll {
+  overflow-y: auto;
+  flex: 1;
+}
+.builder-foot {
+  border-top: 1px solid var(--rule);
+  padding: var(--s2) var(--s3);
+  display: flex;
+  gap: var(--s2);
+  align-items: center;
+  background: var(--surface-2);
+}
+
+.builder-section {
+  border-bottom: 1px solid var(--rule);
+  padding: var(--s3);
+}
+.builder-section > h4 {
+  font-size: var(--t-10);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  margin-bottom: var(--s2);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s2);
+}
+.builder-row {
+  display: flex;
+  gap: var(--s2);
+  align-items: center;
+}
+.builder-row > label {
+  flex: 1;
+  min-width: 0;
+}
+
+/*
+  A metric or dimension in the builder.
+
+  Applied to Mantine's Checkbox root, which already lays the control and
+  its label out; this adds the hit area, the hover affordance and the
+  two-line clamp on the description.
+*/
+.pick {
+  padding: 3px var(--s2);
+  margin: 0 calc(var(--s2) * -1);
+  border-radius: var(--r-control);
+  cursor: pointer;
+  align-items: flex-start;
+}
+.pick:hover {
+  background: var(--surface-sunk);
+}
+.pick label {
+  cursor: pointer;
+  line-height: 1.35;
+  min-width: 0;
+}
+
+/* The name truncates on one line; the description wraps to two and then
+   ellipsises. A single nowrap parent around both cut the description
+   mid-character with no ellipsis at all. */
+.pick-name {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--t-12);
+}
+.pick small {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  color: var(--ink-3);
+  font-size: var(--t-10);
+  line-height: 1.3;
+}
+
+.result {
+  overflow: auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.result-pad {
+  padding: var(--s4) var(--s5) var(--s7);
+}
+
+.sql details {
+  border: 1px solid var(--rule);
+  border-radius: var(--r-surface);
+  background: var(--surface);
+}
+.sql summary {
+  cursor: pointer;
+  color: var(--ink-2);
+  font-size: var(--t-11);
+  padding: var(--s2) var(--s4);
+  user-select: none;
+}
+.sql summary:hover {
+  color: var(--ink);
+}
+.sql pre {
+  margin: 0;
+  padding: var(--s4);
+  border-top: 1px solid var(--rule);
+  background: var(--surface-sunk);
+  font-size: var(--t-11);
+  line-height: 1.6;
+  overflow-x: auto;
+}
+
+/* ---------- Charts, without a chart library ---------- */
+
+.bars {
+  display: grid;
+  gap: 2px;
+}
+.bar-row {
+  display: grid;
+  grid-template-columns: minmax(5rem, 12rem) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--s3);
+  font-size: var(--t-12);
+  padding: 1px 0;
+}
+.bar-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ink-2);
+}
+.bar-track {
+  background: var(--surface-sunk);
+  border-radius: 1px;
+  height: 0.9rem;
+  overflow: hidden;
+}
+.bar-fill {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+}
+.bar-value {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--t-11);
+}
+
+/* ---------- Auth ---------- */
+
+.gate {
+  min-height: 100%;
+  display: grid;
+  grid-template-rows: 1fr auto;
+  background: var(--bg);
+}
+.gate-inner {
+  display: grid;
+  place-items: center;
+  padding: var(--s7) var(--s4);
+}
+.gate-card {
+  width: 100%;
+  max-width: 23rem;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: var(--r-surface);
+  padding: var(--s6);
+  box-shadow: var(--lift);
+}
+.gate-mark {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  font-weight: 600;
+  font-size: var(--t-14);
+  letter-spacing: -0.02em;
+  margin-bottom: var(--s5);
+}
+.gate h1 {
+  font-size: var(--t-16);
+  margin-bottom: var(--s1);
+}
+.gate .lede {
+  margin: 0 0 var(--s5);
+}
+.gate-foot {
+  border-top: 1px solid var(--rule);
+  padding: var(--s3) var(--s4);
+  font-size: var(--t-11);
+  color: var(--ink-3);
+  text-align: center;
+}
+
+/* ---------- States ---------- */
+
+.empty {
+  border: 1px solid var(--rule);
+  border-radius: var(--r-surface);
+  background: var(--surface);
+  padding: var(--s6);
+  color: var(--ink-2);
+}
+.empty h3 {
+  color: var(--ink);
+  margin-bottom: var(--s2);
+}
+.empty p {
+  margin-bottom: var(--s3);
+}
+.empty p:last-child {
+  margin-bottom: 0;
+}
+
+.notice {
+  padding: var(--s2) var(--s3);
+  border-radius: var(--r-control);
+  border: 1px solid var(--danger);
+  background: var(--danger-wash);
+  color: var(--ink);
+  margin-bottom: var(--s3);
+  font-size: var(--t-12);
+}
+.notice-ok {
+  border-color: var(--accent);
+  background: var(--accent-wash);
+}
+
+.working {
+  height: 2px;
+  background: var(--surface-sunk);
+  overflow: hidden;
+  flex: none;
+}
+.working::after {
+  content: "";
+  display: block;
+  height: 100%;
+  width: 30%;
+  background: var(--accent);
+  animation: sweep 1s ease-in-out infinite;
+}
+@keyframes sweep {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(440%);
+  }
+}
+
+.skeleton {
+  background: var(--surface-sunk);
+  border-radius: 2px;
+  height: 0.8rem;
+  animation: pulse 1.2s ease-in-out infinite;
+}
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+
+/* ---------- Utilities ---------- */
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+}
+.row-wrap {
+  flex-wrap: wrap;
+}
+.row-top {
+  align-items: flex-start;
+}
+.spread {
+  justify-content: space-between;
+}
+.spacer {
+  margin-left: auto;
+}
+.muted {
+  color: var(--ink-2);
+}
+.faint {
+  color: var(--ink-3);
+}
+.small {
+  font-size: var(--t-11);
+}
+.stack {
+  display: grid;
+  gap: var(--s3);
+}
+.truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.scroll-y {
+  overflow-y: auto;
+}
+
+/* ---------- Narrow screens ---------- */
+
+.rail-strip {
+  display: none;
+}
+
+@media (max-width: 62rem) {
+  .shell {
+    grid-template-columns: minmax(0, 1fr);
+    height: auto;
+    min-height: 100%;
+  }
+  .rail {
+    display: none;
+  }
+
+  /* The rail becomes a scrolling strip rather than disappearing, which
+     is what left every screen but Explore unreachable on a phone. */
+  .rail-strip {
+    display: flex;
+    gap: var(--s1);
+    overflow-x: auto;
+    padding: var(--s2);
+    background: var(--surface-2);
+    border-bottom: 1px solid var(--rule);
+    scrollbar-width: none;
+  }
+  .rail-strip::-webkit-scrollbar {
+    display: none;
+  }
+  .rail-strip .rail-link {
+    white-space: nowrap;
+  }
+
+  .explore {
+    grid-template-columns: minmax(0, 1fr);
+    height: auto;
+  }
+  .builder {
+    border-right: none;
+    border-bottom: 1px solid var(--rule);
+  }
+  .builder-scroll {
+    overflow: visible;
+  }
+  .builder-foot {
+    position: sticky;
+    bottom: 0;
+    z-index: 2;
+  }
+  .result,
+  .canvas {
+    overflow: visible;
+  }
+  .page-pad,
+  .result-pad {
+    padding: var(--s4) var(--s3) var(--s7);
+  }
+  .strip-cell {
+    min-width: 6.5rem;
+  }
+}
+
+/* ---------- Drill-down and the line chart ---------- */
+
+/* A dimension value that narrows the question when clicked. */
+.drill {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  text-align: inherit;
+  border-bottom: 1px dotted var(--rule-2);
+}
+.drill:hover {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+.drills {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s2);
+  margin-bottom: var(--s3);
+}
+.drill-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+  padding: 2px var(--s1) 2px var(--s2);
+  border: 1px solid var(--accent-hi);
+  border-radius: var(--r-control);
+  background: var(--accent-wash);
+  font-size: var(--t-11);
+}
+.drill-chip b {
+  font-family: var(--mono);
+  font-weight: 500;
+}
+
+.line-chart svg {
+  width: 100%;
+  height: 14rem;
+  overflow: visible;
+}
+.line-chart figcaption {
+  margin-bottom: var(--s2);
+}
+.line-base {
+  stroke: var(--rule-2);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+.line-path {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+.line-dot {
+  fill: var(--accent);
+}
+
+/* ---------- Command palette ---------- */
+
+.palette {
+  display: flex;
+  flex-direction: column;
+  max-height: 60vh;
+}
+.palette .mantine-Input-wrapper {
+  border-bottom: 1px solid var(--rule);
+  padding: var(--s2) var(--s3);
+}
+.palette-list {
+  list-style: none;
+  margin: 0;
+  padding: var(--s1) 0;
+  overflow-y: auto;
+}
+.palette-item {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s3);
+  padding: var(--s2) var(--s4);
+  cursor: pointer;
+}
+.palette-item.is-active {
+  background: var(--accent-wash);
+}
+.palette-label {
+  font-family: var(--mono);
+  font-size: var(--t-12);
+  color: var(--ink);
+}
+.palette-hint {
+  font-size: var(--t-11);
+  margin-left: auto;
+  text-align: right;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.palette-empty {
+  padding: var(--s4);
+}

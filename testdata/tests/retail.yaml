@@ -1,0 +1,79 @@
+# What the retail model must answer, and what it must refuse.
+#
+# This file is the worked example of `truegrain test`, and it is also the
+# regression suite for the fixture every other correctness test uses.
+#
+# The refusal cases are the ones worth copying. They need no warehouse: the
+# planner declines before any SQL exists, so a pull request can assert that a
+# model still refuses a fan-out with no credentials configured at all. That
+# is the check most worth having and the cheapest one to run.
+
+version: 1
+
+tests:
+  # The number the whole project is about. 885.50 is the truth; the fan-out
+  # the planner declines would answer 2361.00.
+  - name: total revenue is 885.50
+    metrics: [order_revenue]
+    expect_rows:
+      - [885.50]
+
+  - name: revenue splits by region and still totals 885.50
+    metrics: [order_revenue]
+    dimensions: [customers.region]
+    order_by:
+      - field: order_revenue
+        desc: true
+    expect_rows:
+      - [NE, 750.00]
+      - [MW, 135.50]
+
+  # The same total reached down a different path. Two metrics at different
+  # grains agreeing is the evidence that the grain handling is right, and it
+  # is exactly what breaks first when a join is wrong.
+  - name: line revenue reaches the same total as order revenue
+    metrics: [line_revenue]
+    expect_rows:
+      - [885.50]
+
+  - name: a filter narrows the total
+    metrics: [order_revenue]
+    filters:
+      - dimension: orders.status
+        op: eq
+        values: [shipped]
+    expect_rows:
+      - [175.50]
+
+  # The differentiator, asserted. order_revenue is defined at the orders
+  # grain; joining order_lines repeats every order row once per line, so the
+  # sum would inflate. The planner refuses rather than answering 2361.00.
+  - name: revenue by item is refused, because it would inflate
+    metrics: [order_revenue]
+    dimensions: [order_lines.item_id]
+    expect_refusal: fan_out_would_inflate
+
+  # The question that does answer, at the grain where it is correct.
+  - name: line revenue by item is allowed, because it is at the line grain
+    metrics: [line_revenue]
+    dimensions: [order_lines.item_id]
+    expect_row_count: 4
+
+  - name: an unknown metric is refused rather than guessed
+    metrics: [revenue]
+    expect_refusal: unknown_metric
+
+  - name: an unknown dimension is refused rather than ignored
+    metrics: [order_revenue]
+    dimensions: [customers.favourite_colour]
+    expect_refusal: unknown_dimension
+
+  # An average divides, and warehouses disagree about the scale a division
+  # keeps: Postgres and BigQuery divide NUMERIC into NUMERIC, DuckDB divides
+  # into float64. A tolerance says so out loud rather than forcing a round
+  # into the model to make one warehouse agree with another.
+  - name: average order value, to the cent on any warehouse
+    metrics: [average_order_value]
+    tolerance: 0.01
+    expect_rows:
+      - [177.10]

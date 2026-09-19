@@ -1,0 +1,42 @@
+# What each caller is allowed to see.
+#
+# The thing a governance rule most needs is a test, because a row policy
+# that stops applying is invisible: the query still succeeds, the number
+# is just bigger than it should be. Nothing else in the toolchain catches
+# that, and the caller it leaks to is the last person who will report it.
+#
+# Run with the policy file:
+#   truegrain test -models . -policy policy.yaml -tests ./tests
+
+version: 1
+
+tests:
+  - name: an unrestricted caller sees the whole total
+    identity: analyst@example.com
+    metrics: [order_revenue]
+    expect_rows:
+      - [885.50]
+
+  - name: the North East analyst sees only the North East
+    identity: ne-only@example.com
+    metrics: [order_revenue]
+    expect_rows:
+      - [750.00]
+
+  - name: the Midwest analyst sees only the Midwest
+    identity: mw-only@example.com
+    metrics: [order_revenue]
+    expect_rows:
+      - [135.50]
+
+  # The restriction is appended before compilation, so asking for the other
+  # region returns nothing rather than returning it.
+  - name: a restricted caller cannot filter their way out
+    identity: ne-only@example.com
+    metrics: [order_revenue]
+    filters:
+      - dimension: customers.region
+        op: eq
+        values: ["MW"]
+    expect_rows:
+      - [null]
