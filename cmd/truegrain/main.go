@@ -55,6 +55,7 @@ Usage:
   truegrain health    [flags]           report what this configuration enforces
   truegrain diff      [flags]           show which metrics compile differently
   truegrain doctor    [flags]           check the model against the live warehouse
+  truegrain refresh   [flags]           re-read the warehouse into the generated model
   truegrain serve mcp  [flags]          serve the model to agents over MCP
   truegrain serve rest [flags]          serve the model over HTTP and JSON
   truegrain serve postgres [flags]      serve the model to BI tools over the
@@ -108,6 +109,8 @@ func run(args []string) error {
 		return cmdDiff(args[1:])
 	case "doctor":
 		return cmdDoctor(args[1:])
+	case "refresh":
+		return cmdRefresh(args[1:])
 	case "serve":
 		if len(args) < 2 {
 			return fmt.Errorf("serve needs a transport: mcp, rest, postgres or console")
