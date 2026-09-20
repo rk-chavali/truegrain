@@ -24,9 +24,12 @@ import (
 // with inotify would also mean a dependency, and a directory of YAML is small
 // enough that reading it every thirty seconds costs nothing.
 //
-// There is deliberately no reload endpoint. One would need its own
-// authorization, and anything that can write the model files can already
-// trigger this by writing them.
+// A git-backed engine also has a reload endpoint, because the argument above
+// stops holding once the model comes from a repository: the thing that can
+// write the model is a merge on a branch, not a process with access to this
+// filesystem, so there is nobody here to trigger a re-read by writing. It
+// carries its own scope, deploy:model, and exists whether or not a timer is
+// configured. A team deploying from a pipeline sets no interval at all.
 
 // watchModel reloads the served model when the workspace digest changes.
 //
@@ -43,8 +46,16 @@ func watchModel(
 	current string,
 	trigger <-chan struct{},
 ) {
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
+	// A zero interval means no timer: the engine re-reads only when a deploy
+	// asks it to, which is how a team that deploys from a pipeline runs this.
+	// NewTicker panics on zero, and a nil channel blocks forever, which is
+	// exactly what the select below should do with it.
+	var tick <-chan time.Time
+	if interval > 0 {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		tick = ticker.C
+	}
 
 	// The close for the engine currently serving. Held rather than called,
 	// because the model it belongs to is answering requests.
@@ -63,7 +74,7 @@ func watchModel(
 		select {
 		case <-ctx.Done():
 			return
-		case <-ticker.C:
+		case <-tick:
 		case <-trigger:
 			// A deploy asked for this rather than the timer. Identical from
 			// here on: the point of the endpoint is to skip the wait, not to

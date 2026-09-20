@@ -1310,7 +1310,14 @@ func cmdServeREST(args []string) error {
 		srv = srv.WithCORS(rest.NewCORS(origins))
 		fmt.Fprintf(os.Stderr, "browser clients allowed from %s\n", *corsOrigins)
 	}
-	if *reload > 0 {
+	// The deploy endpoint exists exactly when the engine follows a repository,
+	// which is what its documentation promises and what the timer must not
+	// decide. Two ways that was wrong before: a git-backed engine started with
+	// -reload=0 lost the endpoint, which is the setting a team picks when it
+	// wants deploys to come only through its pipeline; and a path-backed
+	// engine with a timer accepted deploys it had nothing to re-read for.
+	followsGit := strings.HasPrefix(*common.models, gitsync.Prefix)
+	if *reload > 0 || followsGit {
 		// The same construction the server started with, so a reloaded model
 		// gets the same audit sinks, resolver and executor as the first one.
 		load := func() (*engine.Engine, func(), error) {
@@ -1323,14 +1330,20 @@ func cmdServeREST(args []string) error {
 		// all ten merges anyway.
 		trigger := make(chan struct{}, 1)
 		go watchModel(ctx, srv, lg, *reload, load, eng.ModelVersion(), trigger)
-		srv = srv.WithReload(func() error {
-			select {
-			case trigger <- struct{}{}:
-			default:
-			}
-			return nil
-		})
-		lg.Info("watching the model for changes", slog.Duration("every", *reload))
+		if followsGit {
+			srv = srv.WithReload(func() error {
+				select {
+				case trigger <- struct{}{}:
+				default:
+				}
+				return nil
+			})
+		}
+		if *reload > 0 {
+			lg.Info("watching the model for changes", slog.Duration("every", *reload))
+		} else {
+			lg.Info("re-reading the repository only when a deploy asks")
+		}
 	}
 	if *obs.otlpEndpoint != "" {
 		lg.Info("telemetry enabled",

@@ -24,20 +24,30 @@ the API took `8081`.
 `2361.00`, the truth is `885.50`, and the engine names the metric that does
 answer rather than inflating a total. One click swaps it in.
 
-**On the command line**, against the API container, which wants a token
-because it binds every interface:
+**On the command line**, against the API container on `8081`. It wants a
+token because it binds every interface, and the token below is the one
+`compose.yaml` sets: public on purpose, because nothing outside the compose
+network can reach the port.
+
+```bash
+export TRUEGRAIN_TOKEN=demo-only-token-not-a-real-secret
+```
 
 A governed number:
 
 ```bash
-curl -s localhost:8080/v1/query -H 'Content-Type: application/json' \
+curl -s localhost:8081/v1/query \
+  -H "Authorization: Bearer $TRUEGRAIN_TOKEN" \
+  -H 'Content-Type: application/json' \
   -d '{"metrics":["order_revenue"],"dimensions":["customers.region"]}'
 ```
 
 The refusal, which is the part worth seeing:
 
 ```bash
-curl -s localhost:8080/v1/query -H 'Content-Type: application/json' \
+curl -s localhost:8081/v1/query \
+  -H "Authorization: Bearer $TRUEGRAIN_TOKEN" \
+  -H 'Content-Type: application/json' \
   -d '{"metrics":["order_revenue"],"dimensions":["order_lines.item_id"]}'
 ```
 
@@ -67,7 +77,8 @@ policy file is loaded, so `health` reports that nothing is enforced. That
 report is the honest one and worth reading:
 
 ```bash
-curl -s localhost:8080/v1/health | python -m json.tool
+curl -s localhost:8081/v1/health \
+  -H "Authorization: Bearer $TRUEGRAIN_TOKEN" | python -m json.tool
 ```
 
 **Everything binds to loopback**, so a laptop on a shared network does not
