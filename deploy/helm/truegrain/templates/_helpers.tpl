@@ -96,6 +96,12 @@ and not the other is the kind of gap nobody notices until it is found from
 the outside.
 */}}
 {{- define "truegrain.authArgs" -}}
+{{- if eq .Values.auth.mode "none" }}
+{{- fail "auth.mode is none, and this chart cannot render a Deployment that would start. A Service fronts the engine, so it binds 0.0.0.0, and the engine refuses to serve every interface unauthenticated rather than come up quietly open. Pick oidc, google or token." }}
+{{- end }}
+{{- if not (has .Values.auth.mode (list "oidc" "google" "token")) }}
+{{- fail (printf "auth.mode is %q; it must be one of oidc, google or token" .Values.auth.mode) }}
+{{- end }}
 {{- if eq .Values.auth.mode "oidc" }}
 - -oidc-issuer={{ required "auth.oidc.issuer is required when auth.mode is oidc" .Values.auth.oidc.issuer }}
 - -oidc-audience={{ required "auth.oidc.audience is required: without it every token this issuer ever minted is accepted here" .Values.auth.oidc.audience }}
@@ -108,7 +114,14 @@ the outside.
 {{- else if eq .Values.auth.mode "google" }}
 - -google-audience={{ required "auth.google.audience is required when auth.mode is google" .Values.auth.google.audience }}
 {{- else if eq .Values.auth.mode "token" }}
+{{- if not .Values.auth.token.existingSecret }}
+{{- fail "auth.mode is token but auth.token.existingSecret names no Secret, so TRUEGRAIN_TOKEN would be empty and the engine would refuse to start. Create the Secret and name it here; the chart never takes a literal token, because a value passed with --set is in shell history and one in a values file is in git." }}
+{{- end }}
 - -token-env=TRUEGRAIN_TOKEN
+- -identity={{ required "auth.token.identity is required with auth.mode token: the engine refuses a shared token with nobody behind it, because every audited decision would record an empty subject" .Values.auth.token.identity }}
+{{- with .Values.auth.token.groups }}
+- -groups={{ join "," . }}
+{{- end }}
 {{- end }}
 {{- end -}}
 

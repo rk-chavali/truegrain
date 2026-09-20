@@ -5,10 +5,20 @@
 # not execute, which is a complete and honest configuration rather than a
 # broken one.
 #
+# It still needs a token. A Service fronts the engine, so the engine binds
+# every interface, and it refuses to do that unauthenticated rather than come
+# up quietly open. Make one first; the chart reads it from a Secret and never
+# from a value, because a token passed with --set is in shell history and one
+# in a committed values file is in git.
+#
+#   kubectl create secret generic truegrain-demo-token --from-literal=token="$(openssl rand -hex 24)"
+#
 #   helm install demo ./truegrain -f examples/values-demo.yaml
 #
 # Read the health output first. It will tell you that nothing is enforced,
-# which is true and is the point of trying it this way.
+# which is true and is the point of trying it this way. Authenticated and
+# ungoverned are different things: every caller here is the same identity,
+# and that identity may read everything.
 
 replicaCount: 1
 
@@ -17,7 +27,13 @@ warehouse:
   dialect: duckdb
 
 auth:
-  mode: none
+  mode: token
+  token:
+    existingSecret: truegrain-demo-token
+    secretKey: token
+    # One shared token, so one identity. The audit will name this for every
+    # decision, which is honest: this install cannot tell callers apart.
+    identity: demo@example.invalid
 
 maxConcurrentQueries: 8
 

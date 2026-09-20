@@ -98,6 +98,14 @@ auth:
   token:
     existingSecret: ""
     secretKey: token
+    # Who the token authenticates as. Required with this mode: every audited
+    # decision records a subject, and one shared token with no identity
+    # records an empty one, which makes the record unable to answer the
+    # question it exists for.
+    identity: ""
+    # Groups that identity belongs to, which a policy file matches on. Empty
+    # by default: a group here widens what the token may read.
+    groups: []
 
   # Scopes the shared token may use: read:model, run:query. Empty grants all.
   tokenScopes: []
