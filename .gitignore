@@ -52,3 +52,7 @@ console/playwright-report/
 # Session state saved by e2e/auth.setup.ts. Cookies for a throwaway
 # account, but cookies all the same.
 console/e2e/.auth/
+
+# Screenshots for a README or a post, written by the shots project. They are
+# regenerated on demand and a repository is not an image host.
+console/e2e/shots/

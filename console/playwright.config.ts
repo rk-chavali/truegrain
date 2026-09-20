@@ -83,6 +83,26 @@ export default defineConfig({
         storageState: "e2e/.auth/owner.json",
       },
     },
+    /*
+      Captures rather than comparisons, and not in the default run.
+
+      The suite above fails when a pixel moves, which is what a regression
+      gate should do. These write full page images for a README and for
+      posts, so they must not be a gate: a screenshot job that fails on a
+      spacing change would teach somebody to ignore it.
+
+      npx playwright test --project=shots
+    */
+    {
+      name: "shots",
+      dependencies: ["setup"],
+      testMatch: /shots\.spec\.ts/,
+      use: {
+        ...devices["Desktop Chrome"],
+        viewport: { width: 1440, height: 900 },
+        storageState: "e2e/.auth/owner.json",
+      },
+    },
   ],
 
   /*
