@@ -26,6 +26,7 @@ repository root.
 | `08-contributing.md` | Licensing, contribution flow, how to run it locally |
 | `09-deploying.md` | TLS posture, probes, replicas, credentials, rotation, environments |
 | `10-control-plane.md` | Accounts, sessions, invitations, and where warehouse credentials live |
+| `11-feature-map.md` | What comparable layers do, what this one does, and the order worth building |
 
 ## The one-sentence version
 
