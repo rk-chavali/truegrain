@@ -2,7 +2,9 @@ package introspect
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"sort"
 	"strings"
 
 	"cloud.google.com/go/bigquery"
@@ -27,6 +29,67 @@ import (
 // thousands of calls. Fine for a command a person runs once on one dataset; if
 // that stops being true, INFORMATION_SCHEMA.COLUMNS is the bulk read, and the
 // constraints still have to come from here.
+
+// ErrNoTables reports a dataset with nothing in it to model.
+var ErrNoTables = errors.New("has no tables")
+
+// DatasetSummary is one dataset a person could choose to read.
+type DatasetSummary struct {
+	Name string
+	// Tables is how many it holds. Shown because "which of these is the one
+	// with my data in it" is the question somebody actually has, and a count
+	// answers it faster than a name does.
+	Tables int
+	// Unreadable is set when the dataset is listed but its tables are not,
+	// which is ordinary on a project where access is granted per dataset.
+	// Reported rather than hidden: a dataset missing from the menu looks like
+	// it does not exist.
+	Unreadable bool
+}
+
+// BigQueryDatasets lists what this credential can see, for a chooser.
+//
+// Counting tables costs one list call per dataset. That is affordable for a
+// command a person runs once, and the count is most of the value of showing
+// the menu at all. A dataset whose tables cannot be listed is still returned,
+// marked, because a permission gap should read as a permission gap.
+func BigQueryDatasets(ctx context.Context, project string) ([]DatasetSummary, error) {
+	client, err := bigquery.NewClient(ctx, project)
+	if err != nil {
+		return nil, fmt.Errorf("connecting to BigQuery project %s: %w", project, err)
+	}
+	defer client.Close()
+
+	var out []DatasetSummary
+	it := client.Datasets(ctx)
+	for {
+		dataset, err := it.Next()
+		if err == iterator.Done {
+			break
+		}
+		if err != nil {
+			return nil, fmt.Errorf("listing datasets in %s: %w", project, err)
+		}
+
+		summary := DatasetSummary{Name: dataset.DatasetID}
+		tables := dataset.Tables(ctx)
+		for {
+			_, err := tables.Next()
+			if err == iterator.Done {
+				break
+			}
+			if err != nil {
+				summary.Unreadable = true
+				break
+			}
+			summary.Tables++
+		}
+		out = append(out, summary)
+	}
+
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out, nil
+}
 
 // BigQuery reads one dataset.
 func BigQuery(ctx context.Context, project, dataset string) (Schema, error) {
@@ -65,16 +128,18 @@ func BigQuery(ctx context.Context, project, dataset string) (Schema, error) {
 		nested = append(nested, skipped...)
 	}
 
+	out.Relationships = uniqueRelationshipNames(out.Relationships)
+
 	if len(nested) > 0 {
-		out.Notes = append(out.Notes, fmt.Sprintf(
-			"left out %s, because a struct or an array is not a dimension. "+
-				"Address a leaf by hand, for example expression: %s.city",
-			strings.Join(nested, ", "), nested[0]))
+		out.Notes = append(out.Notes, nestedNote(nested))
 	}
 
 	if len(out.Tables) == 0 {
+		// Wrapped, so a caller reading several datasets can carry on past an
+		// empty one. Asking for one dataset and finding it empty is an error;
+		// finding one empty dataset among eleven is not.
 		return Schema{}, fmt.Errorf(
-			"dataset %s has no tables, or this credential cannot see them", qualified)
+			"dataset %s: %w, or this credential cannot see them", qualified, ErrNoTables)
 	}
 	return Finish(out), nil
 }
@@ -109,6 +174,38 @@ func describeTable(name string, md *bigquery.TableMetadata) (Table, []string) {
 		t.PrimaryKey = md.TableConstraints.PrimaryKey.Columns
 	}
 	return t, skipped
+}
+
+// nestedNote says which columns were left out, grouped by the table holding
+// them.
+//
+// Written flat once, which read acceptably on a fixture and not at all on a
+// real one: a billing export has fifteen nested columns on a table whose name
+// is fifty characters, so the note repeated that name fifteen times and buried
+// the sentence explaining it.
+func nestedNote(nested []string) string {
+	order := []string{}
+	byTable := map[string][]string{}
+	for _, qualified := range nested {
+		table, column, ok := strings.Cut(qualified, ".")
+		if !ok {
+			table, column = qualified, ""
+		}
+		if _, seen := byTable[table]; !seen {
+			order = append(order, table)
+		}
+		byTable[table] = append(byTable[table], column)
+	}
+
+	var b strings.Builder
+	b.WriteString("a struct or an array is not a dimension, so these were left out:")
+	for _, table := range order {
+		fmt.Fprintf(&b, "\n      %s: %s", table, strings.Join(byTable[table], ", "))
+	}
+	// The example uses the first one found, so it is a column that exists
+	// rather than a placeholder somebody has to translate.
+	fmt.Fprintf(&b, "\n    Address a leaf by hand, for example expression: %s.city", nested[0])
+	return b.String()
 }
 
 // relationshipsOf turns a table's foreign keys into joins.

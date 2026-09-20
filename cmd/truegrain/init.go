@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -56,6 +57,16 @@ func cmdInit(args []string) error {
 		*dialect = chosen
 	}
 
+	// Said before anything is asked for, because "Dataset:" on its own reads
+	// like the model is about to be stored there. It is not: nothing in this
+	// binary ever writes to the warehouse. One dataset is where the first
+	// draft comes from, and the model can name tables anywhere afterwards.
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, "I read what the warehouse already knows and write you a first draft.")
+	fmt.Fprintln(os.Stderr, "The model is YAML on your disk, in your repository: nothing is ever")
+	fmt.Fprintln(os.Stderr, "stored in the warehouse, and you edit it from there.")
+	fmt.Fprintln(os.Stderr)
+
 	var schema introspect.Schema
 	var err error
 
@@ -67,17 +78,30 @@ func cmdInit(args []string) error {
 		if *project == "" {
 			return fmt.Errorf("a BigQuery project is required")
 		}
-		if *dataset == "" {
-			*dataset = ask(in, "Dataset", "")
+		chosen := []string{}
+		if *dataset != "" {
+			chosen = []string{*dataset}
+		} else {
+			chosen, err = chooseDatasets(in, *project)
+			if err != nil {
+				return err
+			}
 		}
-		if err := introspect.ValidateDatasetID(*dataset); err != nil {
-			return err
+		for _, d := range chosen {
+			if err := introspect.ValidateDatasetID(d); err != nil {
+				return err
+			}
 		}
-		if *name == "" {
-			*name = *dataset
+		// A namespace per dataset, which is what models/<namespace>/ already
+		// expects and what keeps ownership answerable: one team owns one
+		// dataset's definitions, and -namespace renaming that only makes
+		// sense when there is one of them.
+		if *name != "" && len(chosen) > 1 {
+			return fmt.Errorf("-namespace names one namespace, and %d datasets were chosen. "+
+				"Each dataset becomes its own namespace, so run init once per dataset to "+
+				"name them", len(chosen))
 		}
-		fmt.Fprintf(os.Stderr, "\nReading %s.%s\n\n", *project, *dataset)
-		schema, err = introspect.BigQuery(context.Background(), *project, *dataset)
+		return initDatasets(*dir, *project, *location, chosen, *name, *force)
 
 	case "postgres":
 		if *dsnEnv == "" {
@@ -95,7 +119,7 @@ func cmdInit(args []string) error {
 				*dsnEnv, *dsnEnv)
 		}
 		if *dataset == "" {
-			*dataset = ask(in, "Schema", "public")
+			*dataset = ask(in, "Schema to read tables from", "public")
 		}
 		if err := introspect.ValidateSchemaName(*dataset); err != nil {
 			return err
@@ -126,6 +150,12 @@ func cmdInit(args []string) error {
 		fmt.Fprintf(os.Stderr, "  wrote  %s\n", f)
 	}
 
+	reportNextSteps(*dir, *name)
+	return nil
+}
+
+// reportNextSteps says what is left, which is the half no schema can write.
+func reportNextSteps(dir, namespace string) {
 	fmt.Fprintf(os.Stderr, `
 Next:
 
@@ -136,9 +166,158 @@ Next:
 Metrics are not generated, and that is deliberate: a schema can say an order
 has a total, and only you can say which of those totals the business counts as
 revenue.
-`, filepath.Join(*dir, "models", *name, "metrics.yaml"), *dir, *dir)
+`, filepath.Join(dir, "models", namespace, "metrics.yaml"), dir, dir)
+}
 
+// chooseDatasets offers what the credential can see.
+//
+// Numbered, like the warehouse question above, because typing a dataset name
+// means already knowing it and the person running this is often exactly the
+// one who does not. A table count is shown beside each: "which of these has my
+// data in it" is the real question, and a count answers it faster than a name.
+func chooseDatasets(in *bufio.Reader, project string) ([]string, error) {
+	fmt.Fprintf(os.Stderr, "Reading the datasets in %s\n\n", project)
+	summaries, err := introspect.BigQueryDatasets(context.Background(), project)
+	if err != nil {
+		return nil, err
+	}
+	if len(summaries) == 0 {
+		return nil, fmt.Errorf("%s has no datasets this credential can see. "+
+			"Check the project, or ask for bigquery.datasets.get on one", project)
+	}
+
+	total := 0
+	for _, d := range summaries {
+		total += d.Tables
+	}
+
+	fmt.Fprintln(os.Stderr, "Which dataset should I read?")
+	fmt.Fprintln(os.Stderr)
+	for i, d := range summaries {
+		count := fmt.Sprintf("%d tables", d.Tables)
+		if d.Unreadable {
+			// Listed rather than hidden: a dataset missing from the menu
+			// looks like it does not exist, which sends somebody to the
+			// wrong place entirely.
+			count = "tables not readable with this credential"
+		} else if d.Tables == 1 {
+			count = "1 table"
+		}
+		fmt.Fprintf(os.Stderr, "  %-5s %-28s %s\n", label(i+1), d.Name, count)
+	}
+	fmt.Fprintf(os.Stderr, "  %-5s %-28s %d tables, one namespace each\n",
+		label(len(summaries)+1), "every dataset", total)
+	fmt.Fprintln(os.Stderr)
+
+	answer := ask(in, "Enter a number, a name, or several numbers separated by commas", "1")
+	return resolveDatasets(answer, summaries)
+}
+
+// label renders the number somebody types, padded as one unit.
+//
+// Padding the name alone lost the columns at ten datasets, because the bracket
+// grows and the name's column does not move with it.
+func label(n int) string {
+	return "[" + strconv.Itoa(n) + "]"
+}
+
+// resolveDatasets turns what was typed into dataset names.
+//
+// Separate from the prompt so the parsing is testable without a terminal,
+// which is the half that can silently read "1,3" as one dataset called "1,3".
+func resolveDatasets(answer string, summaries []introspect.DatasetSummary) ([]string, error) {
+	names := make([]string, 0, len(summaries))
+	for _, d := range summaries {
+		names = append(names, d.Name)
+	}
+
+	answer = strings.TrimSpace(answer)
+	if strings.EqualFold(answer, "all") || answer == strconv.Itoa(len(summaries)+1) {
+		return names, nil
+	}
+
+	var chosen []string
+	seen := map[string]bool{}
+	for _, part := range strings.Split(answer, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		name := ""
+		if n, err := strconv.Atoi(part); err == nil {
+			if n < 1 || n > len(summaries) {
+				return nil, fmt.Errorf("%d is not one of the %d datasets listed", n, len(summaries))
+			}
+			name = summaries[n-1].Name
+		} else {
+			for _, d := range summaries {
+				if strings.EqualFold(d.Name, part) {
+					name = d.Name
+					break
+				}
+			}
+			if name == "" {
+				return nil, fmt.Errorf("%q is not a dataset in this project", part)
+			}
+		}
+		if !seen[name] {
+			seen[name] = true
+			chosen = append(chosen, name)
+		}
+	}
+	if len(chosen) == 0 {
+		return nil, fmt.Errorf("no dataset chosen")
+	}
+	return chosen, nil
+}
+
+// initDatasets reads each chosen dataset and writes it as its own namespace.
+//
+// One dataset that fails to read stops the run rather than leaving a repository
+// half written: a model missing a namespace nobody noticed is worse than a
+// command that says which dataset it could not read.
+func initDatasets(dir, project, location string, datasets []string, namespace string, force bool) error {
+	var written []string
+	for _, d := range datasets {
+		name := namespace
+		if name == "" {
+			name = d
+		}
+		fmt.Fprintf(os.Stderr, "\nReading %s.%s\n\n", project, d)
+		schema, err := introspect.BigQuery(context.Background(), project, d)
+		if errors.Is(err, introspect.ErrNoTables) && len(datasets) > 1 {
+			// Reported and stepped over. Somebody who asked to read everything
+			// should not have the run die on an empty dataset after writing
+			// three namespaces, which leaves a repository half made.
+			fmt.Fprintln(os.Stderr, "  skipped: nothing to model here")
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		printSchema(schema)
+
+		files, err := writeRepository(dir, name, "bigquery", project, location, "", schema, force)
+		if err != nil {
+			return err
+		}
+		written = append(written, files...)
+	}
+
+	fmt.Fprintln(os.Stderr)
+	for _, f := range written {
+		fmt.Fprintf(os.Stderr, "  wrote  %s\n", f)
+	}
+	reportNextSteps(dir, namespaceOf(datasets, namespace))
 	return nil
+}
+
+// namespaceOf names the one to point somebody at in the next steps.
+func namespaceOf(datasets []string, namespace string) string {
+	if namespace != "" {
+		return namespace
+	}
+	return datasets[0]
 }
 
 // printSchema shows what was found, because seeing the keys is how somebody

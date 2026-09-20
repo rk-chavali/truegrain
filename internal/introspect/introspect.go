@@ -20,6 +20,7 @@ package introspect
 import (
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -141,15 +142,56 @@ func Finish(s Schema) Schema {
 
 // relationshipName produces something a person would have written.
 //
-// An auto-generated constraint name is often no name at all, and a name that
-// starts with a warehouse's own punctuation reads badly in a model file.
+// An auto-generated constraint name is often no name at all, and a name
+// carrying a warehouse's own punctuation reads badly in a model file.
+// BigQuery writes fk$1, fk$2 and so on, numbered per table, so the $ appears
+// in the middle rather than at the front: testing the prefix let those
+// through, and two tables each with an unnamed foreign key both arrived as
+// fk$1. A model naming two relationships the same does not load.
 func relationshipName(constraint, from, to string) string {
 	name := strings.TrimSpace(constraint)
 	if _, rest, ok := strings.Cut(name, "."); ok {
 		name = rest
 	}
-	if name == "" || strings.HasPrefix(name, "$") {
+	if name == "" || strings.ContainsAny(name, "$") {
 		return from + "_to_" + to
 	}
 	return name
+}
+
+// uniqueRelationshipNames makes every name distinct, in place of the reader
+// that produced them.
+//
+// A constraint name is unique per table in both PostgreSQL and BigQuery, and
+// a relationship name has to be unique per namespace, so the two disagree
+// whenever a schema has more than one table with an unnamed foreign key. The
+// derived name collides too when one table points at another twice, which is
+// ordinary: a shipping address and a billing address on the same order.
+//
+// Disambiguated by the columns the join is on, because that is the thing that
+// actually differs, and a reader comparing two relationships wants to see it
+// without opening the warehouse.
+func uniqueRelationshipNames(rels []Relationship) []Relationship {
+	taken := make(map[string]bool, len(rels))
+	for i := range rels {
+		name := rels[i].Name
+		if !taken[name] {
+			taken[name] = true
+			continue
+		}
+		candidate := name
+		if len(rels[i].FromColumns) > 0 {
+			candidate = name + "_on_" + strings.Join(rels[i].FromColumns, "_")
+		}
+		// Still taken, which means two identical joins were declared twice.
+		// Numbering is the honest end of the line: there is nothing left to
+		// tell them apart by.
+		base := candidate
+		for n := 2; taken[candidate]; n++ {
+			candidate = base + "_" + strconv.Itoa(n)
+		}
+		rels[i].Name = candidate
+		taken[candidate] = true
+	}
+	return rels
 }

@@ -307,7 +307,9 @@ func readForeignKeys(ctx context.Context, tx pgx.Tx, schema string) ([]Relations
 		out[i].FromColumns = append(out[i].FromColumns, fromColumn)
 		out[i].ToColumns = append(out[i].ToColumns, toColumn)
 	}
-	return out, rows.Err()
+	// Names are per table in PostgreSQL too, so the keying above prevents two
+	// tables' constraints merging without preventing them colliding.
+	return uniqueRelationshipNames(out), rows.Err()
 }
 
 // ValidateSchemaName refuses a name that cannot be a schema.
