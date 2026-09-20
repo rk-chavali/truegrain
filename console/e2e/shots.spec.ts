@@ -28,7 +28,10 @@ test("explore, with an answer", async ({ page }) => {
   await page.goto("/explore");
   await settled(page);
 
-  await page.getByRole("checkbox", { name: /order_revenue/ }).first().check();
+  await page
+    .getByRole("checkbox", { name: /order_revenue/ })
+    .first()
+    .check();
   await page.getByRole("checkbox", { name: /customers\.region/ }).check();
   await page.getByRole("button", { name: "Run" }).click();
 
@@ -44,7 +47,10 @@ test("the refusal, which is the point", async ({ page }) => {
   // order_revenue is declared on the order header. Grouping it by an item
   // repeats every order once per line, so the total would inflate. This is
   // the screenshot the whole product exists for.
-  await page.getByRole("checkbox", { name: /order_revenue/ }).first().check();
+  await page
+    .getByRole("checkbox", { name: /order_revenue/ })
+    .first()
+    .check();
   await page.getByRole("checkbox", { name: /order_lines\.item_id/ }).check();
   await page.getByRole("button", { name: "Run" }).click();
 
@@ -64,7 +70,10 @@ test("the metric the refusal named", async ({ page }) => {
   await page.goto("/explore");
   await settled(page);
 
-  await page.getByRole("checkbox", { name: /order_revenue/ }).first().check();
+  await page
+    .getByRole("checkbox", { name: /order_revenue/ })
+    .first()
+    .check();
   await page.getByRole("checkbox", { name: /order_lines\.item_id/ }).check();
   await page.getByRole("button", { name: "Run" }).click();
   await page.getByRole("button", { name: /Use .*line_revenue.* instead/ }).click();
