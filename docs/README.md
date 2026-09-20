@@ -27,6 +27,7 @@ repository root.
 | `09-deploying.md` | TLS posture, probes, replicas, credentials, rotation, environments |
 | `10-control-plane.md` | Accounts, sessions, invitations, and where warehouse credentials live |
 | `11-feature-map.md` | What comparable layers do, what this one does, and the order worth building |
+| `12-enterprise-readiness.md` | What others gate behind an enterprise tier, what self-hosting answers for free, and the console arrangement |
 
 ## The one-sentence version
 
