@@ -47,7 +47,17 @@ services:
       # the database can answer. Without this the stack comes up broken about
       # half the time, which is the kind of flakiness that makes somebody
       # close the tab.
-      test: ["CMD-SHELL", "pg_isready -U postgres -d warehouse"]
+      #
+      # Over TCP and against the control database, and both halves matter.
+      # postgres runs a temporary server on the unix socket while it executes
+      # the scripts in docker-entrypoint-initdb.d, then stops it and starts
+      # the real one. A socket check passes during that window, so on a fresh
+      # volume every other service connected, was refused, and exited: the
+      # race this was written to close, still open on the one run where it
+      # matters most, which is the first one. TCP is not served until the
+      # real server is up, and truegrain_control does not exist until the
+      # init script that creates it has run.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U postgres -d truegrain_control"]
       interval: 2s
       timeout: 3s
       retries: 30
